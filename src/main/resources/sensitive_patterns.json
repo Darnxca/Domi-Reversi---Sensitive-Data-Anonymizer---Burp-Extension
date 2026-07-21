@@ -1,0 +1,252 @@
+{
+  "_comment": "Domi Reversi - pattern regex per dati sensibili nei body/valori. 'prefix' e' il prefisso del placeholder (es. EMAIL -> EMAIL_1). 'validate' opzionale ('luhn' per carte di credito). L'ordine conta: i pattern piu' specifici vengono applicati prima di quelli generici. Estendibile a piacere.",
+  "patterns": [
+    {
+      "name": "jwt",
+      "prefix": "JWT",
+      "regex": "eyJ[A-Za-z0-9_-]{5,}\\.[A-Za-z0-9_-]{5,}\\.[A-Za-z0-9_-]*",
+      "flags": ""
+    },
+    {
+      "name": "aws_access_key",
+      "prefix": "SECRET",
+      "regex": "\\b(?:AKIA|ASIA|AGPA|AIDA|AROA|AIPA|ANPA|ANVA|A3T[A-Z0-9])[A-Z0-9]{16}\\b",
+      "flags": ""
+    },
+    {
+      "name": "private_key_block",
+      "prefix": "PRIVATE_KEY",
+      "regex": "-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----[\\s\\S]+?-----END (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----",
+      "flags": ""
+    },
+    {
+      "name": "bearer_basic",
+      "prefix": "TOKEN",
+      "regex": "\\b(Bearer|Basic)\\s+[A-Za-z0-9._~+/=-]{8,}",
+      "flags": "i",
+      "keep_group": 1
+    },
+    {
+      "name": "email",
+      "prefix": "EMAIL",
+      "regex": "\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\b",
+      "flags": ""
+    },
+    {
+      "name": "iban",
+      "prefix": "IBAN",
+      "regex": "\\b[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}\\b",
+      "flags": ""
+    },
+    {
+      "name": "credit_card",
+      "prefix": "CARD",
+      "regex": "\\b(?:\\d[ -]?){13,19}\\b",
+      "flags": "",
+      "validate": "luhn"
+    },
+    {
+      "name": "codice_fiscale",
+      "prefix": "CF",
+      "regex": "\\b[A-Z]{6}[0-9]{2}[A-Z][0-9]{2}[A-Z][0-9]{3}[A-Z]\\b",
+      "flags": "i"
+    },
+    {
+      "name": "partita_iva",
+      "prefix": "PIVA",
+      "regex": "\\bIT[0-9]{11}\\b",
+      "flags": "i"
+    },
+    {
+      "name": "ipv6",
+      "prefix": "IP",
+      "regex": "\\b(?:[A-Fa-f0-9]{1,4}:){7}[A-Fa-f0-9]{1,4}\\b|(?:[A-Fa-f0-9]{1,4}:){1,7}:(?:[A-Fa-f0-9]{1,4}:){0,6}[A-Fa-f0-9]{1,4}\\b|\\b(?:[A-Fa-f0-9]{1,4}:){1,7}:(?![A-Fa-f0-9])",
+      "flags": ""
+    },
+    {
+      "name": "ipv4",
+      "prefix": "IP",
+      "regex": "\\b(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\\b",
+      "flags": ""
+    },
+    {
+      "name": "phone",
+      "prefix": "PHONE",
+      "regex": "(?<![\\w.])\\+?[0-9][0-9 ().\\-]{7,}[0-9](?![\\w])",
+      "flags": "",
+      "validate": "phone"
+    },
+    {
+      "name": "google_api_key",
+      "prefix": "APIKEY",
+      "regex": "\\bAIza[0-9A-Za-z_-]{35}\\b",
+      "flags": ""
+    },
+    {
+      "name": "stripe_key",
+      "prefix": "SECRET",
+      "regex": "\\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{10,}\\b",
+      "flags": ""
+    },
+    {
+      "name": "github_token",
+      "prefix": "SECRET",
+      "regex": "\\bgh[pousr]_[A-Za-z0-9]{20,}\\b",
+      "flags": ""
+    },
+    {
+      "name": "github_pat",
+      "prefix": "SECRET",
+      "regex": "\\bgithub_pat_[A-Za-z0-9_]{20,}\\b",
+      "flags": ""
+    },
+    {
+      "name": "slack_token",
+      "prefix": "SECRET",
+      "regex": "\\bxox[baprs]-[A-Za-z0-9-]{10,}\\b",
+      "flags": ""
+    },
+    {
+      "name": "openai_anthropic_key",
+      "prefix": "SECRET",
+      "regex": "\\bsk-(?:ant-)?[A-Za-z0-9_-]{16,}\\b",
+      "flags": ""
+    },
+    {
+      "name": "google_oauth_token",
+      "prefix": "TOKEN",
+      "regex": "\\bya29\\.[A-Za-z0-9_-]{20,}\\b",
+      "flags": ""
+    },
+    {
+      "name": "twilio_sid",
+      "prefix": "SECRET",
+      "regex": "\\b(?:AC|SK)[0-9a-fA-F]{32}\\b",
+      "flags": ""
+    },
+    {
+      "name": "generic_secret_hex",
+      "prefix": "SECRET",
+      "regex": "\\b[0-9a-fA-F]{16,}\\b",
+      "flags": ""
+    },
+    {
+      "name": "generic_secret_b64",
+      "prefix": "SECRET",
+      "regex": "\\b(?=[A-Za-z0-9_-]{0,64}[0-9])[A-Za-z0-9_-]{24,}={0,2}\\b",
+      "flags": ""
+    }
+  ],
+  "sensitive_json_keys": {
+    "exact": [
+      "email",
+      "mail",
+      "e-mail",
+      "phone",
+      "telephone",
+      "telefono",
+      "cellulare",
+      "mobile",
+      "name",
+      "nome",
+      "cognome",
+      "surname",
+      "firstname",
+      "lastname",
+      "fullname",
+      "username",
+      "user",
+      "login",
+      "address",
+      "indirizzo",
+      "street",
+      "city",
+      "cap",
+      "zip",
+      "cf",
+      "codicefiscale",
+      "piva",
+      "vat",
+      "iban",
+      "ssn",
+      "dob",
+      "birthdate",
+      "datanascita",
+      "pan"
+    ],
+    "contains": [
+      "password",
+      "passwd",
+      "pwd",
+      "token",
+      "secret",
+      "apikey",
+      "accesskey",
+      "privatekey",
+      "clientsecret",
+      "authorization",
+      "sessionid",
+      "session",
+      "cardnumber",
+      "creditcard",
+      "cvv",
+      "cvc",
+      "securitycode",
+      "otp",
+      "pin"
+    ]
+  },
+  "key_prefix_map": {
+    "password": "SECRET",
+    "passwd": "SECRET",
+    "pwd": "SECRET",
+    "secret": "SECRET",
+    "clientsecret": "SECRET",
+    "apikey": "APIKEY",
+    "accesskey": "APIKEY",
+    "privatekey": "PRIVATE_KEY",
+    "token": "TOKEN",
+    "accesstoken": "TOKEN",
+    "refreshtoken": "TOKEN",
+    "idtoken": "TOKEN",
+    "authorization": "TOKEN",
+    "sessionid": "SESSION",
+    "session": "SESSION",
+    "email": "EMAIL",
+    "mail": "EMAIL",
+    "phone": "PHONE",
+    "telefono": "PHONE",
+    "cellulare": "PHONE",
+    "mobile": "PHONE",
+    "iban": "IBAN",
+    "cardnumber": "CARD",
+    "creditcard": "CARD",
+    "pan": "CARD",
+    "cvv": "CVV",
+    "cvc": "CVV",
+    "securitycode": "CVV",
+    "cf": "CF",
+    "codicefiscale": "CF",
+    "piva": "PIVA",
+    "vat": "PIVA",
+    "ssn": "SSN",
+    "otp": "OTP",
+    "pin": "PIN",
+    "name": "NAME",
+    "nome": "NAME",
+    "cognome": "NAME",
+    "surname": "NAME",
+    "firstname": "NAME",
+    "lastname": "NAME",
+    "fullname": "NAME",
+    "username": "USERNAME",
+    "user": "USERNAME",
+    "login": "USERNAME",
+    "address": "ADDRESS",
+    "indirizzo": "ADDRESS",
+    "street": "ADDRESS",
+    "dob": "DOB",
+    "birthdate": "DOB",
+    "datanascita": "DOB"
+  }
+}

@@ -1,0 +1,44 @@
+plugins {
+    id 'java'
+    // Shadow: impacchetta Gson dentro il jar (installazione one-click).
+    id 'com.gradleup.shadow' version '8.3.5'
+}
+
+group = 'com.domireversi'
+version = '1.0.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Montoya e' fornita da Burp a runtime: solo in compilazione, NON nel jar.
+    compileOnly 'net.portswigger.burp.extensions:montoya-api:2026.7'
+    // Gson viene bundlato (e rilocato) nel jar finale.
+    implementation 'com.google.code.gson:gson:2.14.0'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.3'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+test {
+    useJUnitPlatform()
+}
+
+shadowJar {
+    // il jar da caricare in Burp e' questo (senza suffisso '-all')
+    archiveClassifier = ''
+    // rilocazione di Gson: evita conflitti con Burp o altre estensioni
+    relocate 'com.google.gson', 'com.domireversi.shaded.gson'
+    // includi le risorse (sensitive_headers.json, sensitive_patterns.json)
+    from sourceSets.main.resources
+}
+
+// 'gradle build' produce il jar autonomo pronto per Burp / BApp Store
+build.dependsOn shadowJar

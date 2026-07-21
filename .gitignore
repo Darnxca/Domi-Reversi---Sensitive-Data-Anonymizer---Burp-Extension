@@ -1,0 +1,11 @@
+# Build
+build/
+out/
+out-test/
+.gradle/
+
+# Jar scaricati per la compilazione locale (Gradle li risolve da Maven)
+lib/
+
+# Wrapper generato (opzionale versionarlo; escluso di default)
+.gradletasknamecache
