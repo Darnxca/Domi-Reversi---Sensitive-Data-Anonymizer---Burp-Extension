@@ -54,7 +54,6 @@ l'API Montoya.
 Serve un JDK 17+ (Burp gira su JRE recente). Con Gradle:
 
 ```bash
-cd burp-bapp
 gradle shadowJar         # oppure: ./gradlew shadowJar dopo 'gradle wrapper'
 # -> build/libs/domi-reversi-burp-1.0.0.jar   (autonomo, Gson incluso)
 ```
