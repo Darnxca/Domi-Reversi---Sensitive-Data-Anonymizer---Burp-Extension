@@ -8,9 +8,10 @@ group = 'com.domireversi'
 version = '1.0.0'
 
 java {
-    toolchain {
-        languageVersion = JavaLanguageVersion.of(17)
-    }
+    // Compila col JDK che esegue Gradle (qualunque >= 17), mirando al bytecode
+    // Java 17. Niente toolchain da scaricare -> build portabile ovunque.
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
 }
 
 repositories {
@@ -36,8 +37,8 @@ shadowJar {
     archiveClassifier = ''
     // rilocazione di Gson: evita conflitti con Burp o altre estensioni
     relocate 'com.google.gson', 'com.domireversi.shaded.gson'
-    // includi le risorse (sensitive_headers.json, sensitive_patterns.json)
-    from sourceSets.main.resources
+    // le risorse (sensitive_headers/patterns.json, META-INF/services) sono gia'
+    // incluse di default da processResources -> non ri-aggiungerle (duplicati).
 }
 
 // 'gradle build' produce il jar autonomo pronto per Burp / BApp Store

@@ -4,8 +4,9 @@ out/
 out-test/
 .gradle/
 
-# Jar scaricati per la compilazione locale (Gradle li risolve da Maven)
+# Jar scaricati per la compilazione locale con build.sh (Gradle li risolve da Maven)
 lib/
 
-# Wrapper generato (opzionale versionarlo; escluso di default)
+# NOTA: il Gradle wrapper (gradlew, gradlew.bat, gradle/wrapper/*) VA committato:
+# PortSwigger lo richiede per compilare l'estensione. NON e' escluso qui.
 .gradletasknamecache
