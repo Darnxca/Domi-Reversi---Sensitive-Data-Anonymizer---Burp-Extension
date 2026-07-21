@@ -1,4 +1,4 @@
-# Domi Reversi — estensione nativa Burp (Montoya) per il BApp Store
+# Domi Reversi — estensione nativa per Burp
 
 Questa cartella contiene il **port nativo in Java** dell'anonimizzatore, pensato
 per essere **pubblicato sul BApp Store**. È **autonomo**: nessun Python a
