@@ -19,6 +19,9 @@ l'uso personale/distribuzione fuori dallo store.
 
 ```
 burp-bapp/
+├── gradle
+│   ├── gradle-wrapper.jar
+│   ├── gradle-wrapper.properties
 ├── build.gradle            # build Gradle (Shadow: jar autonomo con Gson)
 ├── settings.gradle
 ├── src/main/java/com/domireversi/
@@ -32,9 +35,9 @@ burp-bapp/
 │       ├── Overrides.java          # override utente (extra/exclude)
 │       ├── Config.java             # carica i JSON bundlati (Gson)
 │       └── PatternDef.java
-├── src/main/resources/
-│   ├── sensitive_headers.json      # copiati dal tool (stessa fonte di verità)
-│   └── sensitive_patterns.json
+│   ├── src/main/resources/
+│   │   ├── sensitive_headers.json      # copiati dal tool (stessa fonte di verità)
+│   │   └── sensitive_patterns.json
 ├── src/test/java/com/domireversi/AnonymizerTest.java   # 29 test JUnit
 ├── build.sh                        # build del jar senza Gradle
 └── selftest/SelfTest.java          # verifica locale rapida (senza JUnit)
