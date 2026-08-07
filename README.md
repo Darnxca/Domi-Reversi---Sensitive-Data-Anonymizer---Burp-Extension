@@ -1,165 +1,111 @@
-# Domi Reversi — estensione nativa per Burp
+# Domi Reversi — Sensitive Data Anonymizer
 
-Questa cartella contiene il **port nativo in Java** dell'anonimizzatore, pensato
-per essere **pubblicato sul BApp Store**. È **autonomo**: nessun Python a
-runtime, nessun processo esterno, nessuna dipendenza da installare. Tutta la
-logica gira dentro Burp e i pattern sono **risorse bundlate nel jar**.
+A Burp Suite extension that anonymizes HTTP requests and responses so you can share
+them with an external LLM (for pentest advice, debugging, or write-ups) **without
+leaking your client's sensitive data**.
 
-È indipendente dalla via Jython (`../burp-extension/`), che resta valida per
-l'uso personale/distribuzione fuori dallo store.
+It replaces hosts, credentials, tokens, cookies, IP addresses and PII with
+consistent, reversible placeholders (`HOST_1`, `IP_1`, `EMAIL_1`,
+`AUTH_TOKEN_1`, …) while keeping the original structure intact — so what you paste
+into the model still looks like a real message and the advice stays relevant. A
+substitution map lets you reverse the placeholders, and a **De-anonymize** tab
+turns the model's reply back into the real values.
 
-> Perché un port e non il ponte Jython? Il BApp Store richiede estensioni
-> **self-contained / installazione one-click** e raccomanda **Montoya (Java)**;
-> un'estensione che lancia `python3` verrebbe rifiutata. Il codice Python resta
-> la **specifica di riferimento** e i suoi test i casi da riprodurre.
+Everything runs locally inside Burp. The extension does **not** integrate with or
+call any AI service and makes no outbound connections of its own — it only produces
+the redacted text; where you paste it afterwards is entirely your choice.
 
----
+## Features
 
-## Struttura
+- Anonymize straight from the **context menu** (Proxy history, Repeater, …) or by
+  pasting raw HTTP into the dedicated tab. Choose **request + response**, **request
+  only**, or **response only**.
+- **Selective header redaction** — the header name stays visible, only the value is
+  masked: `Host`, `Authorization`, `Cookie`/`Set-Cookie` (per-cookie, names kept),
+  the forwarding family (`X-Forwarded-For`/`-Host`, `Forwarded` — both IPs and
+  internal hostnames), API-key and CSRF/auth-token headers,
+  `WWW-Authenticate`/`Proxy-Authenticate`, and stack-disclosing banners (`Server`,
+  `X-Powered-By`, version headers). Harmless headers are left untouched so the
+  message stays readable.
+- **Body redaction by format**: JSON (sensitive keys at any depth), form-urlencoded
+  (percent-decoded first), multipart/form-data (nested, filenames,
+  base64/quoted-printable parts), HTML/XML, GraphQL (inline literals and variables),
+  and `Transfer-Encoding: chunked` (correctly reassembled, multibyte-safe).
+- **Pattern detection** anywhere in the message: emails, IPv4/IPv6, credit-card
+  numbers (Luhn-validated), IBAN, JWTs, PEM private keys, provider API keys (AWS,
+  Google, Stripe, GitHub, Slack, Twilio, …), Italian Codice Fiscale / P.IVA, and
+  phone numbers.
+- **Consistent, reversible placeholders**: the same value always maps to the same
+  placeholder across headers and body, request and response.
+- **De-anonymize** tab: paste the model's reply and recover the real values from the
+  last substitution map.
+- **Full user control**:
+  - the substitution map is a table with a checkbox on every row — untick any value
+    you'd rather keep in clear (an open-source server banner, a chatbot name) and it
+    re-runs instantly;
+  - for anything the rules missed, select the text and press **Ctrl+Shift+A**
+    (or right-click → *Anonymize selection*) — every occurrence becomes `CUSTOM_1`,
+    `CUSTOM_2`, …
+- **English / Italian** user interface.
+- Fully offline and self-contained — a single jar with everything bundled, no
+  configuration and no network calls.
 
-```
-burp-bapp/
-├── gradle
-│   ├── gradle-wrapper.jar
-│   ├── gradle-wrapper.properties
-├── build.gradle            # build Gradle (Shadow: jar autonomo con Gson)
-├── settings.gradle
-├── src/main/java/com/domireversi/
-│   ├── DomiReversiExtension.java   # entry point (BurpExtension, Montoya)
-│   ├── DomiReversiMenu.java        # menu contestuale
-│   ├── ui/DomiReversiTab.java      # UI Swing (usa il core, niente Montoya)
-│   └── core/                       # LOGICA PURA (nessuna dipendenza Burp)
-│       ├── Anonymizer.java         # motore: header + body + regex + host + deanon
-│       ├── HttpMessage.java        # parsing/serializzazione HTTP robusti
-│       ├── SubstitutionMap.java    # placeholder coerenti + mappa inversa
-│       ├── Overrides.java          # override utente (extra/exclude)
-│       ├── Config.java             # carica i JSON bundlati (Gson)
-│       └── PatternDef.java
-│   ├── src/main/resources/
-│   │   ├── sensitive_headers.json      # copiati dal tool (stessa fonte di verità)
-│   │   └── sensitive_patterns.json
-├── src/test/java/com/domireversi/AnonymizerTest.java   # 29 test JUnit
-├── build.sh                        # build del jar senza Gradle
-└── selftest/SelfTest.java          # verifica locale rapida (senza JUnit)
-```
+## Requirements
 
-Il `core` non importa nulla di Burp: è **testabile in isolamento** (i test
-girano senza Montoya). Solo `DomiReversiExtension`/`DomiReversiMenu` toccano
-l'API Montoya.
+- Burp Suite (Community or Professional) with a recent JRE.
+- To build from source: a JDK 17 or newer.
 
----
+## Building
 
-## Build
-
-Serve un JDK 17+ (Burp gira su JRE recente). Con Gradle:
-
-```bash
-gradle shadowJar         # oppure: ./gradlew shadowJar dopo 'gradle wrapper'
-# -> build/libs/domi-reversi-burp-1.0.0.jar   (autonomo, Gson incluso)
-```
-
-Montoya è `compileOnly` (Burp la fornisce a runtime, non finisce nel jar); Gson
-è bundlato e **rilocato** in `com.domireversi.shaded.gson` per evitare conflitti.
-
-### Caricare in Burp
-Extensions → Installed → **Add** → *Extension type*: **Java** → seleziona
-`build/libs/domi-reversi-burp-1.0.0.jar`. Comparirà il tab **Domi Reversi** e la
-voce di menu **“Anonimizza con Domi Reversi”** (tasto destro su una
-request/response).
-
----
-
-## Test
+The project uses Gradle. From the repository root:
 
 ```bash
-gradle test        # 29 test JUnit (com.domireversi.AnonymizerTest)
+./gradlew shadowJar
 ```
 
-I test coprono gli stessi casi della versione Python: header, JSON per-chiave +
-regex, provider key, domini nudi, coerenza, form, multipart (+base64), chunked
-(+multibyte), HTML, GraphQL, de-anonimizzazione, Luhn, robustezza. (Verificati
-anche via `selftest/SelfTest.java`, 41 asserzioni.)
+This produces a self-contained jar at:
 
-### Test in Burp prima dell'invio (manuale)
+```
+build/libs/domi-reversi-burp-1.0.0.jar
+```
 
-La logica è coperta dai test automatici; l'interazione dentro Burp va provata a
-mano:
+The [Montoya API](https://portswigger.github.io/burp-extensions-montoya-api/) is
+`compileOnly` (Burp provides it at runtime); Gson is bundled and relocated to avoid
+conflicts with Burp or other extensions.
 
-1. **Costruisci il jar**: `./build.sh` (o `gradle shadowJar`).
-2. **Carica**: Extensions → Add → *Extension type: Java* → seleziona
-   `build/libs/domi-reversi-burp-1.0.0.jar`.
-3. **Verifica il caricamento**: nell'**Output** compare il messaggio di avvio;
-   l'**Errors** è vuoto; appare il tab **Domi Reversi** e la voce di menu
-   contestuale.
-4. **Prova funzionale**: naviga un sito (browser di Burp) per popolare la Proxy
-   history → tasto destro su una richiesta → *Anonimizza con Domi Reversi* →
-   controlla output, **Mappa sostituzioni**, e **De-anonimizza**. Casi utili:
-   Authorization/Cookie in request, Set-Cookie/Server in response, body JSON con
-   `password`/`email`, un upload **multipart**, una response **chunked**.
-5. **Offline**: stacca la rete e verifica che funzioni comunque (tutto è
-   bundlato, nessuna chiamata esterna).
-6. **Robustezza**: incolla input malformato/grande → nessun crash.
+## Installing
 
-> Prima della submission: repo GitHub pubblico + README + licenza; verifica sullo
-> store che non esista già un'estensione equivalente.
+In Burp: **Extensions → Installed → Add** → *Extension type:* **Java** → select the
+jar. A **Domi Reversi** tab appears and a new right-click menu entry is added.
 
----
+## Usage
 
-## Copertura
+1. In Proxy history / Repeater, **right-click** a request/response and choose
+   *Anonymize (request + response)* — or *request only* / *response only*. It opens
+   in the tab, already anonymized. You can also paste raw HTTP into the tab and press
+   **Anonymize**.
+2. Review the output, then open the **Substitution map** tab to see each
+   `original → placeholder`. Untick any value you want to keep in clear — the output
+   updates immediately.
+3. Missed something? Select it in the input and press **Ctrl+Shift+A** (or
+   right-click → *Anonymize selection*). Every occurrence is replaced with a
+   `CUSTOM_n` placeholder.
+4. Copy the anonymized request/response and paste it into your LLM of choice.
+5. When the model replies referring to placeholders (`HOST_1`, `IP_2`, …), paste its
+   answer into the **De-anonymize** tab to restore the real values.
 
-Il port Java copre **gli stessi formati della versione desktop Python**:
+## How it works
 
-- start line; header selettivi (host, auth, cookie/set-cookie, IP/forwarding,
-  referer/origin/location, apikey/token, redact, host-scan, user-agent,
-  auth-challenge, custom-scan, keep-list);
-- **JSON** (redazione per-chiave + nidificata + regex sulle stringhe);
-- **form-urlencoded** (con decodifica percent-encoding);
-- **multipart/form-data**: per-parte, filename (quoted/`filename*=`/non quotato),
-  redazione per nome-campo, **multipart annidato** e parti
-  **`Content-Transfer-Encoding: base64`/`quoted-printable`** (decodifica →
-  anonimizza → ri-codifica; blob binari redatti in blocco);
-- **`Transfer-Encoding: chunked`**: ri-assemblato in **ottetti** (corretto anche
-  con contenuto multibyte/emoji) e ri-codificato come chunked valido;
-- **HTML/XML**: testo sotto tag dal nome sensibile, attributi `value`/`content`/
-  `data-*`, host in `href`/`src`/`action`, più scansione dei nodi testo;
-- **GraphQL**: literal inline nel campo `query` (e `application/graphql`) sotto
-  argomenti sensibili, oltre alle `variables`;
-- scansione regex generica su qualunque altro body; host noti/URL/domini nudi
-  (allow-list TLD); coerenza dei placeholder; de-anonimizzazione.
+The same original value always receives the same placeholder — in the Host header,
+in a `Referer`, in a `Set-Cookie` domain, and in URLs inside the body. Because the
+mapping is kept, it is reversible: the substitution map (and the De-anonymize tab)
+turn placeholders back into the original values. Non-numbered redactions used for
+information disclosure (e.g. `Server` banners shown as `REDACTED`) are intentionally
+not reversible.
 
-**Extra (solo Burp):**
-- **Lingua EN/IT** (selettore in alto; default English per lo store).
-- Mappa sostituzioni in un **tab dedicato**, con una **spunta per valore**:
-  togli la spunta per tenere quel valore in chiaro (si ri-anonimizza subito).
-- **Anonimizzazione manuale**: seleziona testo in un input → tasto destro
-  «Anonymize selection» o **Ctrl+Shift+A** → tutte le occorrenze → `CUSTOM_n`.
-- Selettore **ambito** e menu contestuale a 3 voci: **request + response**,
-  **solo request** o **solo response** (l'ambito scelto carica/anonimizza solo
-  la parte richiesta).
+No automated redactor is perfect: always review the output before sharing it, and
+use the map checkboxes or manual selection to correct anything.
 
-> L'HTML/XML è gestito via regex (non un parser DOM come bs4): copre i casi
-> comuni ed è coperto dalla scansione regex come rete di sicurezza. Un parser
-> completo (jsoup) è un possibile miglioramento futuro.
+## License
 
-Copertura verificata da **29 test JUnit** (`AnonymizerTest`) + `selftest`
-(41 asserzioni), inclusi tutti i formati sopra.
-
----
-
-## Pubblicazione sul BApp Store — checklist
-
-1. **Sorgente su GitHub** (repo pubblico con questo progetto).
-2. Apri una *New extension submission* sul repository
-   **`PortSwigger/extension-portal`** con: link al repo, nome, descrizione, come
-   funziona e istruzioni d'uso.
-3. Requisiti di accettazione da soddisfare (già rispettati qui):
-   - **Autonoma / one-click**: sì (jar unico, Gson incluso, nessun runtime esterno).
-   - **Montoya API**: sì.
-   - **Funziona offline**: sì (i pattern sono bundlati; nessuna chiamata di rete).
-   - **Opera in sicurezza**, gestione errori graceful: sì (nessun crash su input malformato).
-   - **Nessun duplicato**: da verificare sullo store che non esista già un'estensione equivalente.
-   - Nome/descrizione chiari; niente “phone-home”.
-4. PortSwigger valuta, **compila dal sorgente** e pubblica.
-
-> La copertura dei formati è già allineata alla versione desktop (multipart,
-> chunked, HTML/XML, GraphQL inclusi), quindi non offre meno del tool Python.
+Released under the [MIT License](LICENSE).
