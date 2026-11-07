@@ -3,8 +3,6 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/Darnxca/Domi-Reversi---Sensitive-Data-Anonymizer---Burp-Extension/actions/workflows/ci.yml"><img src="https://github.com/Darnxca/Domi-Reversi---Sensitive-Data-Anonymizer---Burp-Extension/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://github.com/Darnxca/Domi-Reversi---Sensitive-Data-Anonymizer---Burp-Extension/actions/workflows/codeql.yml"><img src="https://github.com/Darnxca/Domi-Reversi---Sensitive-Data-Anonymizer---Burp-Extension/actions/workflows/codeql.yml/badge.svg" alt="CodeQL"></a>
   <a href="https://github.com/Darnxca/Domi-Reversi---Sensitive-Data-Anonymizer---Burp-Extension/releases/latest"><img src="https://img.shields.io/github/v/release/Darnxca/Domi-Reversi---Sensitive-Data-Anonymizer---Burp-Extension?sort=semver" alt="Latest release"></a>
   <img src="https://img.shields.io/badge/Java-17%2B-orange" alt="Java 17+">
   <img src="https://img.shields.io/badge/Burp%20Suite-Montoya%20API-ff6633" alt="Burp Suite Montoya API">

@@ -53,6 +53,9 @@ src/test/                     unit, audit, adversarial and GraphQL tests
 
 ## Releasing
 
-1. Update `CHANGELOG.md`.
-2. Tag and push: `git tag v1.2.0 && git push origin v1.2.0`.
-3. The *Release* workflow builds, runs every test and publishes the jar with its SHA-256.
+1. Update `CHANGELOG.md` and the version in `build.gradle`.
+2. Run `./gradlew build audit -PstrictAudit` and check everything is green.
+3. Tag and push: `git tag v1.2.0 && git push origin v1.2.0`.
+4. Publish the release: either run the *Release* workflow manually from the Actions tab,
+   or create the release on GitHub and attach `build/libs/domi-reversi-burp-<version>.jar`
+   with its SHA-256 checksum.
