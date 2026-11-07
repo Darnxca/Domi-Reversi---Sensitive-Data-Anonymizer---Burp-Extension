@@ -11,7 +11,7 @@ cd "$(dirname "$0")"
 
 MONTOYA_VER="2026.7"
 GSON_VER="2.14.0"
-JAR="build/libs/domi-reversi-burp-1.0.0.jar"
+JAR="build/libs/domi-reversi-burp-1.1.0.jar"
 
 mkdir -p lib build/libs
 

@@ -26,6 +26,11 @@ public final class DomiReversiExtension implements BurpExtension {
         api.extension().setName(EXTENSION_NAME);
 
         DomiReversiTab tab = new DomiReversiTab();
+        try {
+            tab.setEditorFont(api.userInterface().currentEditorFont());
+        } catch (Throwable ignored) {
+            // versioni di Burp senza questa API: resta il font monospazio di default
+        }
         api.userInterface().registerSuiteTab(TAB_TITLE, tab.getComponent());
         api.userInterface().registerContextMenuItemsProvider(new DomiReversiMenu(tab));
 

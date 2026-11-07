@@ -1,6 +1,18 @@
 {
-  "_comment": "Domi Reversi - pattern regex per dati sensibili nei body/valori. 'prefix' e' il prefisso del placeholder (es. EMAIL -> EMAIL_1). 'validate' opzionale ('luhn' per carte di credito). L'ordine conta: i pattern piu' specifici vengono applicati prima di quelli generici. Estendibile a piacere.",
+  "_comment": "Domi Reversi - pattern regex per dati sensibili nei body/valori. 'prefix' e' il prefisso del placeholder (es. EMAIL -> EMAIL_1). 'validate' opzionale: card (Luhn + circuito), iban (mod 97), phone, hex, b64, b64secret. L'ordine conta: i pattern piu' specifici vengono applicati prima di quelli generici. I pattern 'generic_*' e quelli con validate hex/b64 sono saltati sotto chiavi identificative (id, hash, commit...). Evitare gruppi ripetuti senza limite (rischio di blocchi su input lunghi).",
   "patterns": [
+    {
+      "name": "private_key_block",
+      "prefix": "PRIVATE_KEY",
+      "regex": "-----BEGIN ((?:RSA |EC |OPENSSH |DSA |PGP |ENCRYPTED )?PRIVATE KEY(?: BLOCK)?)-----[\\s\\S]+?-----END \\1-----",
+      "flags": ""
+    },
+    {
+      "name": "private_key_truncated",
+      "prefix": "PRIVATE_KEY",
+      "regex": "-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP |ENCRYPTED )?PRIVATE KEY(?: BLOCK)?-----[A-Za-z0-9+/=\\r\\n]{16,}",
+      "flags": ""
+    },
     {
       "name": "jwt",
       "prefix": "JWT",
@@ -14,12 +26,6 @@
       "flags": ""
     },
     {
-      "name": "private_key_block",
-      "prefix": "PRIVATE_KEY",
-      "regex": "-----BEGIN (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----[\\s\\S]+?-----END (?:RSA |EC |OPENSSH |DSA |PGP )?PRIVATE KEY-----",
-      "flags": ""
-    },
-    {
       "name": "bearer_basic",
       "prefix": "TOKEN",
       "regex": "\\b(Bearer|Basic)\\s+[A-Za-z0-9._~+/=-]{8,}",
@@ -29,21 +35,124 @@
     {
       "name": "email",
       "prefix": "EMAIL",
-      "regex": "\\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}\\b",
+      "regex": "(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]{1,63}(?:\\.[A-Za-z0-9-]{1,63}){0,8}\\.[A-Za-z]{2,24}\\b",
+      "flags": ""
+    },
+    {
+      "name": "sendgrid_key",
+      "prefix": "SECRET",
+      "regex": "\\bSG\\.[A-Za-z0-9_-]{16,}\\.[A-Za-z0-9_-]{16,}",
+      "flags": ""
+    },
+    {
+      "name": "gitlab_token",
+      "prefix": "SECRET",
+      "regex": "\\bgl(?:pat|dt|rt|cbt|ptt|ft|soat|agent)-[A-Za-z0-9_-]{20,}",
+      "flags": ""
+    },
+    {
+      "name": "npm_token",
+      "prefix": "SECRET",
+      "regex": "\\bnpm_[A-Za-z0-9]{36}\\b",
+      "flags": ""
+    },
+    {
+      "name": "github_token",
+      "prefix": "SECRET",
+      "regex": "\\bgh[pousr]_[A-Za-z0-9]{20,}\\b",
+      "flags": ""
+    },
+    {
+      "name": "github_pat",
+      "prefix": "SECRET",
+      "regex": "\\bgithub_pat_[A-Za-z0-9_]{20,}\\b",
+      "flags": ""
+    },
+    {
+      "name": "slack_token",
+      "prefix": "SECRET",
+      "regex": "\\bxox[baprse]-[A-Za-z0-9-]{10,}\\b",
+      "flags": ""
+    },
+    {
+      "name": "slack_webhook",
+      "prefix": "SECRET",
+      "regex": "(?<=/services/)T[A-Za-z0-9]{6,}/B[A-Za-z0-9]{6,}/[A-Za-z0-9]{16,}",
+      "flags": ""
+    },
+    {
+      "name": "discord_webhook",
+      "prefix": "SECRET",
+      "regex": "(?<=/api/webhooks/)\\d{15,20}/[A-Za-z0-9_-]{20,}",
+      "flags": ""
+    },
+    {
+      "name": "telegram_bot_token",
+      "prefix": "SECRET",
+      "regex": "\\b\\d{8,10}:AA[A-Za-z0-9_-]{30,}\\b",
+      "flags": ""
+    },
+    {
+      "name": "openai_anthropic_key",
+      "prefix": "SECRET",
+      "regex": "\\bsk-(?:ant-)?[A-Za-z0-9_-]{16,}\\b",
+      "flags": ""
+    },
+    {
+      "name": "google_api_key",
+      "prefix": "APIKEY",
+      "regex": "\\bAIza[0-9A-Za-z_-]{35}\\b",
+      "flags": ""
+    },
+    {
+      "name": "google_oauth_token",
+      "prefix": "TOKEN",
+      "regex": "\\bya29\\.[A-Za-z0-9_-]{20,}\\b",
+      "flags": ""
+    },
+    {
+      "name": "stripe_key",
+      "prefix": "SECRET",
+      "regex": "\\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{10,}\\b",
+      "flags": ""
+    },
+    {
+      "name": "twilio_sid",
+      "prefix": "SECRET",
+      "regex": "\\b(?:AC|SK)[0-9a-fA-F]{32}\\b",
+      "flags": ""
+    },
+    {
+      "name": "mailgun_key",
+      "prefix": "SECRET",
+      "regex": "\\bkey-[0-9a-f]{32}\\b",
+      "flags": ""
+    },
+    {
+      "name": "shopify_token",
+      "prefix": "SECRET",
+      "regex": "\\bshp(?:at|ca|pa|ss)_[a-fA-F0-9]{32}\\b",
+      "flags": ""
+    },
+    {
+      "name": "huggingface_token",
+      "prefix": "SECRET",
+      "regex": "\\bhf_[A-Za-z0-9]{30,}\\b",
       "flags": ""
     },
     {
       "name": "iban",
       "prefix": "IBAN",
-      "regex": "\\b[A-Z]{2}[0-9]{2}[A-Z0-9]{11,30}\\b",
-      "flags": ""
+      "regex": "\\b[A-Z]{2}\\d{2}(?: ?[A-Z0-9]){11,30}\\b",
+      "flags": "i",
+      "validate": "iban"
     },
     {
       "name": "credit_card",
       "prefix": "CARD",
-      "regex": "\\b(?:\\d[ -]?){13,19}\\b",
+      "regex": "\\b\\d(?:[ -]?\\d){11,18}\\b",
       "flags": "",
-      "validate": "luhn"
+      "validate": "card"
     },
     {
       "name": "codice_fiscale",
@@ -56,6 +165,25 @@
       "prefix": "PIVA",
       "regex": "\\bIT[0-9]{11}\\b",
       "flags": "i"
+    },
+    {
+      "name": "partita_iva_context",
+      "prefix": "PIVA",
+      "regex": "((?:partita\\s{1,3}iva|p\\.\\s?iva|piva|vat\\s{1,3}(?:number|id|no\\.?)|vat|codice\\s{1,3}fiscale)\\s{0,3}[:.]?(?:\\s{0,3}n\\.?)?)\\s{0,3}(?:IT)?\\d{11}\\b",
+      "flags": "i",
+      "keep_group": 1
+    },
+    {
+      "name": "mac_address",
+      "prefix": "MAC",
+      "regex": "\\b[0-9A-Fa-f]{2}(?:[:-][0-9A-Fa-f]{2}){5}\\b",
+      "flags": ""
+    },
+    {
+      "name": "ssn_us",
+      "prefix": "SSN",
+      "regex": "\\b\\d{3}-\\d{2}-\\d{4}\\b",
+      "flags": ""
     },
     {
       "name": "ipv6",
@@ -77,176 +205,80 @@
       "validate": "phone"
     },
     {
-      "name": "google_api_key",
-      "prefix": "APIKEY",
-      "regex": "\\bAIza[0-9A-Za-z_-]{35}\\b",
-      "flags": ""
-    },
-    {
-      "name": "stripe_key",
+      "name": "b64_secret",
       "prefix": "SECRET",
-      "regex": "\\b(?:sk|pk|rk)_(?:live|test)_[A-Za-z0-9]{10,}\\b",
-      "flags": ""
-    },
-    {
-      "name": "github_token",
-      "prefix": "SECRET",
-      "regex": "\\bgh[pousr]_[A-Za-z0-9]{20,}\\b",
-      "flags": ""
-    },
-    {
-      "name": "github_pat",
-      "prefix": "SECRET",
-      "regex": "\\bgithub_pat_[A-Za-z0-9_]{20,}\\b",
-      "flags": ""
-    },
-    {
-      "name": "slack_token",
-      "prefix": "SECRET",
-      "regex": "\\bxox[baprs]-[A-Za-z0-9-]{10,}\\b",
-      "flags": ""
-    },
-    {
-      "name": "openai_anthropic_key",
-      "prefix": "SECRET",
-      "regex": "\\bsk-(?:ant-)?[A-Za-z0-9_-]{16,}\\b",
-      "flags": ""
-    },
-    {
-      "name": "google_oauth_token",
-      "prefix": "TOKEN",
-      "regex": "\\bya29\\.[A-Za-z0-9_-]{20,}\\b",
-      "flags": ""
-    },
-    {
-      "name": "twilio_sid",
-      "prefix": "SECRET",
-      "regex": "\\b(?:AC|SK)[0-9a-fA-F]{32}\\b",
-      "flags": ""
+      "regex": "(?<![A-Za-z0-9+/=])[A-Za-z0-9+/]{32,}={0,2}(?![A-Za-z0-9+/=])",
+      "flags": "",
+      "validate": "b64secret"
     },
     {
       "name": "generic_secret_hex",
       "prefix": "SECRET",
       "regex": "\\b[0-9a-fA-F]{16,}\\b",
-      "flags": ""
+      "flags": "",
+      "validate": "hex"
     },
     {
       "name": "generic_secret_b64",
       "prefix": "SECRET",
       "regex": "\\b(?=[A-Za-z0-9_-]{0,64}[0-9])[A-Za-z0-9_-]{24,}={0,2}\\b",
-      "flags": ""
+      "flags": "",
+      "validate": "b64"
     }
   ],
+  "options": {
+    "_comment": "level: 'standard' = gli identificativi (id, *_id, *Id, *_ref, uuid, hash, header di tracing) restano leggibili per il debugging; 'strict' = vengono sostituiti con ID_n (coerenti e reversibili). preserve_keys: campi/header mai anonimizzati, a qualunque livello.",
+    "level": "standard",
+    "preserve_keys": [
+      "correlation_id", "x-correlation-id", "request_id", "x-request-id", "trace_id", "x-trace-id",
+      "span_id", "traceparent", "tracestate", "x-amzn-trace-id", "x-b3-traceid", "x-b3-spanid"
+    ]
+  },
   "sensitive_json_keys": {
     "exact": [
-      "email",
-      "mail",
-      "e-mail",
-      "phone",
-      "telephone",
-      "telefono",
-      "cellulare",
-      "mobile",
-      "name",
-      "nome",
-      "cognome",
-      "surname",
-      "firstname",
-      "lastname",
-      "fullname",
-      "username",
-      "user",
-      "login",
-      "address",
-      "indirizzo",
-      "street",
-      "city",
-      "cap",
-      "zip",
-      "cf",
-      "codicefiscale",
-      "piva",
-      "vat",
-      "iban",
-      "ssn",
-      "dob",
-      "birthdate",
-      "datanascita",
-      "pan"
+      "email", "mail", "e-mail", "phone", "telephone", "telefono", "cellulare", "mobile", "msisdn",
+      "name", "nome", "cognome", "surname", "firstname", "lastname", "fullname",
+      "username", "user", "login",
+      "address", "indirizzo", "street", "city", "cap", "zip",
+      "cf", "codicefiscale", "fiscalcode", "taxid", "taxcode", "piva", "vat", "iban", "ssn", "passport",
+      "dob", "birthdate", "birthday", "dateofbirth", "datanascita",
+      "pan", "pass", "auth", "sid", "sessid", "sig", "otp", "pin", "pincode",
+      "ip", "clientip", "remoteip", "ipaddress", "ipaddr",
+      "expiry", "expirydate", "expdate"
     ],
     "contains": [
-      "password",
-      "passwd",
-      "pwd",
-      "token",
-      "secret",
-      "apikey",
-      "accesskey",
-      "privatekey",
-      "clientsecret",
-      "authorization",
-      "sessionid",
-      "session",
-      "cardnumber",
-      "creditcard",
-      "cvv",
-      "cvc",
-      "securitycode",
-      "otp",
-      "pin"
+      "password", "passwd", "pwd", "passphrase",
+      "token", "secret", "apikey", "accesskey", "accountkey", "subscriptionkey", "privatekey",
+      "secretkey", "clientsecret", "authorization", "authkey", "authtoken", "credential",
+      "sessionid", "session", "cookie", "csrf", "xsrf", "signature", "jwt", "bearer",
+      "cardnumber", "creditcard", "cardexp", "cvv", "cvc", "securitycode",
+      "otpcode", "totp", "email", "phone", "birth", "addressline"
     ]
   },
   "key_prefix_map": {
-    "password": "SECRET",
-    "passwd": "SECRET",
-    "pwd": "SECRET",
-    "secret": "SECRET",
-    "clientsecret": "SECRET",
-    "apikey": "APIKEY",
-    "accesskey": "APIKEY",
+    "password": "SECRET", "passwd": "SECRET", "pwd": "SECRET", "pass": "SECRET", "passphrase": "SECRET",
+    "secret": "SECRET", "clientsecret": "SECRET", "secretkey": "SECRET", "accountkey": "SECRET",
+    "credential": "SECRET", "signature": "SECRET", "sig": "SECRET",
+    "apikey": "APIKEY", "accesskey": "APIKEY", "subscriptionkey": "APIKEY", "authkey": "APIKEY",
     "privatekey": "PRIVATE_KEY",
-    "token": "TOKEN",
-    "accesstoken": "TOKEN",
-    "refreshtoken": "TOKEN",
-    "idtoken": "TOKEN",
-    "authorization": "TOKEN",
-    "sessionid": "SESSION",
-    "session": "SESSION",
-    "email": "EMAIL",
-    "mail": "EMAIL",
-    "phone": "PHONE",
-    "telefono": "PHONE",
-    "cellulare": "PHONE",
-    "mobile": "PHONE",
-    "iban": "IBAN",
-    "cardnumber": "CARD",
-    "creditcard": "CARD",
-    "pan": "CARD",
-    "cvv": "CVV",
-    "cvc": "CVV",
-    "securitycode": "CVV",
-    "cf": "CF",
-    "codicefiscale": "CF",
-    "piva": "PIVA",
-    "vat": "PIVA",
-    "ssn": "SSN",
-    "otp": "OTP",
-    "pin": "PIN",
-    "name": "NAME",
-    "nome": "NAME",
-    "cognome": "NAME",
-    "surname": "NAME",
-    "firstname": "NAME",
-    "lastname": "NAME",
-    "fullname": "NAME",
-    "username": "USERNAME",
-    "user": "USERNAME",
-    "login": "USERNAME",
-    "address": "ADDRESS",
-    "indirizzo": "ADDRESS",
-    "street": "ADDRESS",
-    "dob": "DOB",
-    "birthdate": "DOB",
-    "datanascita": "DOB"
+    "token": "TOKEN", "accesstoken": "TOKEN", "refreshtoken": "TOKEN", "idtoken": "TOKEN",
+    "authorization": "TOKEN", "authtoken": "TOKEN", "auth": "TOKEN", "bearer": "TOKEN",
+    "csrf": "TOKEN", "xsrf": "TOKEN", "jwt": "JWT",
+    "sessionid": "SESSION", "session": "SESSION", "sid": "SESSION", "sessid": "SESSION", "cookie": "COOKIE",
+    "email": "EMAIL", "mail": "EMAIL", "e-mail": "EMAIL",
+    "phone": "PHONE", "telephone": "PHONE", "telefono": "PHONE", "cellulare": "PHONE", "mobile": "PHONE", "msisdn": "PHONE",
+    "iban": "IBAN", "cardnumber": "CARD", "creditcard": "CARD", "pan": "CARD",
+    "cardexp": "CARD_EXP", "expiry": "CARD_EXP", "expirydate": "CARD_EXP", "expdate": "CARD_EXP",
+    "cvv": "CVV", "cvc": "CVV", "securitycode": "CVV",
+    "cf": "CF", "codicefiscale": "CF", "fiscalcode": "CF", "taxid": "CF", "taxcode": "CF",
+    "piva": "PIVA", "vat": "PIVA", "ssn": "SSN", "passport": "ID",
+    "otp": "OTP", "otpcode": "OTP", "totp": "OTP", "pin": "PIN", "pincode": "PIN",
+    "name": "NAME", "nome": "NAME", "cognome": "NAME", "surname": "NAME",
+    "firstname": "NAME", "lastname": "NAME", "fullname": "NAME",
+    "username": "USERNAME", "user": "USERNAME", "login": "USERNAME",
+    "address": "ADDRESS", "indirizzo": "ADDRESS", "street": "ADDRESS", "addressline": "ADDRESS",
+    "city": "ADDRESS", "cap": "ADDRESS", "zip": "ADDRESS",
+    "dob": "DOB", "birthdate": "DOB", "birthday": "DOB", "dateofbirth": "DOB", "datanascita": "DOB", "birth": "DOB",
+    "ip": "IP", "clientip": "IP", "remoteip": "IP", "ipaddress": "IP", "ipaddr": "IP"
   }
 }

@@ -31,6 +31,25 @@ public final class Config {
     public final List<String> keyContains = new ArrayList<>();
     public final Map<String, String> keyPrefixMap = new HashMap<>();
 
+    /** Livello: "standard" (gli identificativi restano leggibili) o "strict" (anche gli ID -> ID_n). */
+    public static final String LEVEL_STANDARD = "standard";
+    public static final String LEVEL_STRICT = "strict";
+    public volatile String level = LEVEL_STANDARD;
+    /** Chiavi/header mai anonimizzati, a qualunque livello (normalizzati: minuscolo, senza _ - . spazi). */
+    public final Set<String> preserveKeys = new HashSet<>();
+
+    public boolean strictIds() { return LEVEL_STRICT.equalsIgnoreCase(level); }
+
+    public static String normKey(String key) {
+        StringBuilder sb = new StringBuilder(key.length());
+        for (int i = 0; i < key.length(); i++) {
+            char c = key.charAt(i);
+            if (c == '_' || c == '-' || c == '.' || Character.isWhitespace(c)) continue;
+            sb.append(Character.toLowerCase(c));
+        }
+        return sb.toString();
+    }
+
     /** Carica dalla classpath (risorse nel jar). */
     public static Config loadFromResources() {
         String headers = readResource("/sensitive_headers.json");
@@ -109,6 +128,13 @@ public final class Config {
                 }
                 if (keys.has("contains") && keys.get("contains").isJsonArray()) {
                     for (JsonElement k : keys.getAsJsonArray("contains")) keyContains.add(k.getAsString().toLowerCase());
+                }
+            }
+            if (root.has("options") && root.get("options").isJsonObject()) {
+                JsonObject opt = root.getAsJsonObject("options");
+                if (opt.has("level")) level = opt.get("level").getAsString().trim().toLowerCase();
+                if (opt.has("preserve_keys") && opt.get("preserve_keys").isJsonArray()) {
+                    for (JsonElement k : opt.getAsJsonArray("preserve_keys")) preserveKeys.add(normKey(k.getAsString()));
                 }
             }
             if (root.has("key_prefix_map") && root.get("key_prefix_map").isJsonObject()) {

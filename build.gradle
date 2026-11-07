@@ -5,13 +5,19 @@ plugins {
 }
 
 group = 'com.domireversi'
-version = '1.0.0'
+// La CI di release passa la versione dal tag: ./gradlew build -PreleaseVersion=1.2.3
+version = project.findProperty('releaseVersion') ?: '1.1.0'
 
 java {
     // Compila col JDK che esegue Gradle (qualunque >= 17), mirando al bytecode
     // Java 17. Niente toolchain da scaricare -> build portabile ovunque.
     sourceCompatibility = JavaVersion.VERSION_17
     targetCompatibility = JavaVersion.VERSION_17
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+    options.compilerArgs << '-Xlint:deprecation'
 }
 
 repositories {
@@ -29,7 +35,32 @@ dependencies {
 }
 
 test {
-    useJUnitPlatform()
+    // la batteria estesa (tag "audit") gira a parte: ./gradlew audit
+    useJUnitPlatform { excludeTags 'audit' }
+    systemProperty 'file.encoding', 'UTF-8'
+    testLogging { events 'failed'; exceptionFormat 'full' }
+}
+
+// Batteria estesa di anonimizzazione (~2400 casi generati). In locale non blocca
+// la build; in CI si usa -PstrictAudit per farla fallire al primo errore.
+tasks.register('audit', Test) {
+    description = 'Batteria estesa di test di anonimizzazione'
+    group = 'verification'
+    testClassesDirs = sourceSets.test.output.classesDirs
+    classpath = sourceSets.test.runtimeClasspath
+    useJUnitPlatform { includeTags 'audit' }
+    systemProperty 'file.encoding', 'UTF-8'
+    ignoreFailures = !project.hasProperty('strictAudit')
+    outputs.upToDateWhen { false }
+    reports.html.outputLocation = layout.buildDirectory.dir('reports/audit')
+    reports.junitXml.outputLocation = layout.buildDirectory.dir('test-results/audit')
+    afterSuite { desc, result ->
+        if (!desc.parent) {
+            println "\nAUDIT: ${result.testCount} test, ${result.successfulTestCount} ok, " +
+                    "${result.failedTestCount} falliti, ${result.skippedTestCount} saltati"
+            println "Report: build/reports/audit/index.html"
+        }
+    }
 }
 
 shadowJar {
@@ -37,6 +68,12 @@ shadowJar {
     archiveClassifier = ''
     // rilocazione di Gson: evita conflitti con Burp o altre estensioni
     relocate 'com.google.gson', 'com.domireversi.shaded.gson'
+    manifest {
+        attributes(
+                'Implementation-Title': 'Domi Reversi - Sensitive Data Anonymizer',
+                'Implementation-Version': project.version,
+                'Implementation-Vendor': 'Domi Reversi')
+    }
     // le risorse (sensitive_headers/patterns.json, META-INF/services) sono gia'
     // incluse di default da processResources -> non ri-aggiungerle (duplicati).
 }

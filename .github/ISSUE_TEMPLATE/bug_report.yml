@@ -1,0 +1,57 @@
+name: Bug report
+description: Something is not anonymized, is anonymized wrongly, or the extension misbehaves.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Never paste real client data.** Replace every real value with a fake one of the same shape
+        (e.g. `mario@example.com`, `10.0.0.1`) before submitting.
+        If you found a leak that could expose real data, please use the private
+        [security advisory](../security/advisories/new) instead of a public issue.
+  - type: dropdown
+    id: kind
+    attributes:
+      label: Kind of problem
+      options:
+        - Sensitive value left in clear (leak)
+        - Harmless value anonymized (false positive)
+        - Message structure changed / not reversible
+        - Crash, freeze or slowness
+        - User interface
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: input
+    attributes:
+      label: Sample input (fake data only)
+      description: Minimal HTTP request/response that reproduces the problem.
+      render: http
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual output
+      render: http
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected output
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Extension version
+      placeholder: e.g. 1.1.0
+    validations:
+      required: true
+  - type: input
+    id: burp
+    attributes:
+      label: Burp Suite edition and version
+      placeholder: e.g. Professional 2026.7

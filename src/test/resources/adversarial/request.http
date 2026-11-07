@@ -1,0 +1,87 @@
+POST /api/v2/users/search?email=mario%40example.com&backup=mario%2Btest%40example.com&ip=192.168.1.100&token=abc123XYZ&repeat=mario%40example.com&literal=EMAIL_1&nested=%257B%2522email%2522%253A%2522luca%2540example.com%2522%257D HTTP/1.1
+Host: api.example.com
+Content-Type: application/json; charset=utf-8
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJtYXJpbyIsImVtYWlsIjoibWFyaW9AZXhhbXBsZS5jb20ifQ.signature
+X-Forwarded-For: 192.168.1.100, 10.0.0.5
+X-User-Email: mario@example.com
+X-Backup-Email: mario+test@example.com
+X-Session-Token: abc123XYZ
+X-Request-ID: EMAIL_1
+X-Collision: TOKEN_1
+X-Collision: mario@example.com
+Cookie: session=abc123XYZ; user=mario; email=mario@example.com; preference=EMAIL_1
+Accept: application/json
+X-Unicode: àèìòù-你好-مرحبا-😀-é
+X-Empty:
+X-Whitespace:    
+Content-Length: 999
+
+{
+  "user": {
+    "id": "123456789",
+    "name": "Mario Rossi",
+    "email": "mario@example.com",
+    "backup_email": "mario+test@example.com",
+    "phone": "+39 333 1234567",
+    "ip": "192.168.1.100",
+    "address": {
+      "street": "Via Roma 123",
+      "city": "Milano",
+      "postal_code": "20100",
+      "country": "IT"
+    }
+  },
+  "credentials": {
+    "access_token": "abc123XYZ",
+    "refresh_token": "refresh_987654321",
+    "api_key": "sk_live_EXAMPLE_SECRET_123456",
+    "password": "P@ssw0rd!EMAIL_1",
+    "literal_placeholder": "EMAIL_1",
+    "literal_token": "TOKEN_1",
+    "literal_host": "HOST_1"
+  },
+  "repetitions": [
+    "mario@example.com",
+    "mario@example.com",
+    "mario+test@example.com",
+    "192.168.1.100",
+    "abc123XYZ",
+    "EMAIL_1",
+    "TOKEN_1",
+    "HOST_1",
+    "EMAIL_10",
+    "prefix_EMAIL_1_suffix",
+    "NOT_EMAIL_1"
+  ],
+  "serialized": "{\"email\":\"luca@example.com\",\"phone\":\"+39 333 7654321\",\"token\":\"other_secret_987\"}",
+  "encoded": {
+    "url": "mario%40example.com",
+    "double_url": "mario%2540example.com",
+    "base64": "bWFyaW9AZXhhbXBsZS5jb20=",
+    "hex": "6d6172696f406578616d706c652e636f6d",
+    "html": "mario&#64;example.com",
+    "unicode": "\\u006dario@example.com"
+  },
+  "free_text": "Contattare Mario Rossi (mario@example.com), telefono +39 333 1234567. Token abc123XYZ. IP 192.168.1.100. Il testo contiene EMAIL_1 e TOKEN_1 come valori letterali.",
+  "nested_array": [
+    {
+      "email": "luca@example.com",
+      "email_again": "luca@example.com"
+    },
+    {
+      "email": "mario@example.com",
+      "email_again": "luca@example.com"
+    }
+  ],
+  "edge_cases": {
+    "empty": "",
+    "null": null,
+    "spaces": "   ",
+    "newline": "line1\nline2",
+    "unicode": "👨‍👩‍👧‍👦 é é ñ 中文 العربية",
+    "special": "<script>alert('mario@example.com')</script>",
+    "regex": "a+b*c? [mario@example.com] (TOKEN_1) {EMAIL_1}",
+    "overlap": "mario@example.com.mario@example.com",
+    "similar": "mario@example.co mario@example.comx x.mario@example.com"
+  }
+}

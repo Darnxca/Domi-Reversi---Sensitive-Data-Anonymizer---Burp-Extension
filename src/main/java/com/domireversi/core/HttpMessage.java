@@ -16,6 +16,10 @@ public final class HttpMessage {
     public static final class Header {
         public String name;
         public String value;
+        /** Testo originale prima del valore (nome grezzo + ':' + spazi) e dopo il valore. */
+        String rawName;
+        String sep = ": ";
+        String trail = "";
         public Header(String name, String value) { this.name = name; this.value = value; }
     }
 
@@ -146,17 +150,23 @@ public final class HttpMessage {
         for (String line : lines) {
             if (line.isEmpty()) continue;
             char c0 = line.charAt(0);
-            if ((c0 == ' ' || c0 == '\t') && !msg.headers.isEmpty()) {
-                Header last = msg.headers.get(msg.headers.size() - 1);
-                last.value = last.value + " " + line.trim();
-                continue;
-            }
             int c = line.indexOf(':');
-            if (c < 0) {
+            if (c < 0 || c0 == ' ' || c0 == '\t') {
+                // riga senza nome o continuazione (obs-fold): conservata cosi' com'e'
                 msg.headers.add(new Header("", line));
                 continue;
             }
-            msg.headers.add(new Header(line.substring(0, c).trim(), line.substring(c + 1).trim()));
+            String rawName = line.substring(0, c);
+            String rest = line.substring(c + 1);
+            int vs = 0;
+            while (vs < rest.length() && (rest.charAt(vs) == ' ' || rest.charAt(vs) == '\t')) vs++;
+            int ve = rest.length();
+            while (ve > vs && (rest.charAt(ve - 1) == ' ' || rest.charAt(ve - 1) == '\t')) ve--;
+            Header h = new Header(rawName.trim(), rest.substring(vs, ve));
+            h.rawName = rawName;
+            h.sep = ":" + rest.substring(0, vs);
+            h.trail = rest.substring(ve);
+            msg.headers.add(h);
         }
     }
 
@@ -168,8 +178,11 @@ public final class HttpMessage {
         List<String> parts = new ArrayList<>();
         if (startLine != null && !startLine.isEmpty()) parts.add(startLine);
         for (Header h : headers) {
-            if (h.name.isEmpty()) parts.add(h.value);
-            else parts.add(h.name + ": " + h.value);
+            if (h.name.isEmpty() && h.rawName == null) parts.add(h.value);
+            else {
+                String nm = (h.rawName != null && h.rawName.trim().equals(h.name)) ? h.rawName : h.name;
+                parts.add(nm + h.sep + h.value + h.trail);
+            }
         }
         for (int i = 0; i < parts.size(); i++) {
             if (i > 0) sb.append(nl);

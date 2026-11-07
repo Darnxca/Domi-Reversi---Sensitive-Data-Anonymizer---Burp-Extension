@@ -1,0 +1,15 @@
+# Normalizzazione dei fine riga
+* text=auto
+
+# script: LF / CRLF
+gradlew        text eol=lf
+*.sh           text eol=lf
+*.bat          text eol=crlf
+
+# Fixture dei test: confrontati byte per byte, mai convertiti
+src/test/resources/** -text
+
+# Binari
+*.png binary
+*.jpg binary
+*.jar binary

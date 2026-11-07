@@ -1,0 +1,45 @@
+HTTP/1.1 200 OK
+Content-Type: application/json; charset=utf-8
+X-Authenticated-User: mario@example.com
+X-Resolved-IP: 192.168.1.100
+X-Response-Token: abc123XYZ
+Set-Cookie: session=abc123XYZ; HttpOnly; Secure; SameSite=Lax
+Set-Cookie: user_email=mario@example.com; Path=/; Secure
+X-Literal: EMAIL_1
+X-Literal-2: TOKEN_1
+
+{
+  "success": true,
+  "authenticated_user": {
+    "name": "Mario Rossi",
+    "email": "mario@example.com",
+    "phone": "+39 333 1234567"
+  },
+  "session": {
+    "access_token": "abc123XYZ",
+    "refresh_token": "refresh_987654321"
+  },
+  "message": "Benvenuto Mario Rossi, la tua email è mario@example.com",
+  "request_echo": {
+    "email": "mario@example.com",
+    "ip": "192.168.1.100",
+    "token": "abc123XYZ"
+  },
+  "other_user": {
+    "email": "luca@example.com",
+    "phone": "+39 333 7654321"
+  },
+  "literal_values": [
+    "EMAIL_1",
+    "EMAIL_2",
+    "TOKEN_1",
+    "HOST_1",
+    "EMAIL_10"
+  ],
+  "encoded_echo": [
+    "mario%40example.com",
+    "mario%2540example.com",
+    "bWFyaW9AZXhhbXBsZS5jb20=",
+    "6d6172696f406578616d706c652e636f6d"
+  ]
+}

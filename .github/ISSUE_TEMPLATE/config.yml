@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Report a security issue privately
+    url: https://github.com/Darnxca/Domi-Reversi---Sensitive-Data-Anonymizer---Burp-Extension/security/advisories/new
+    about: Leaks that could expose real data should be reported privately, not as a public issue.
