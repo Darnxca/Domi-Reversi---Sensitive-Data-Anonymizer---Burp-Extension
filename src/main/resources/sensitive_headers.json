@@ -1,4 +1,5 @@
 {
+  "_comment_banner": "Banner di versione (Server, X-Powered-By, X-AspNet-Version...): leggibili, perche' la versione serve all'LLM per le CVE e non identifica il cliente; il valore viene comunque scansionato, quindi host, IP e nome del cliente al suo interno spariscono. Via / X-Backend-Server / X-Served-By: scansione completa (host e IP interni diventano HOST_n / IP_n). Per tornare a oscurarli: rimetterli in 'redact' (anche da ~/.domi-reversi/sensitive_headers.json).",
   "_comment": "Domi Reversi - lista estendibile degli header sensibili. Ogni chiave in 'strategies' e' una strategia di anonimizzazione applicata al VALORE degli header elencati (il nome dell'header resta visibile). Gli header in 'keep' vengono lasciati intatti (solo gli host gia' noti vengono sostituiti). Gli header non elencati il cui nome contiene parole sensibili (token, secret, session, api-key, csrf...) vengono mascherati per intero; tutti gli altri vengono scansionati. Modifica liberamente questo file per estendere la copertura.",
   "strategies": {
     "host": ["Host", "X-Host", "X-Original-Host", ":authority"],
@@ -61,24 +62,8 @@
     "set_cookie": ["Set-Cookie", "Set-Cookie2"],
     "location": ["Location", "Content-Location", "X-Original-URL", "X-Rewrite-URL", "Refresh"],
     "auth_challenge": ["WWW-Authenticate", "Proxy-Authenticate"],
-    "redact": [
-      "Server",
-      "X-Powered-By",
-      "X-AspNet-Version",
-      "X-AspNetMvc-Version",
-      "X-Generator",
-      "Dxp-Sap",
-      "X-User-Logon-Language",
-      "Via",
-      "X-Runtime",
-      "X-Version",
-      "X-Backend-Server",
-      "X-Served-By",
-      "X-Drupal-Cache",
-      "X-Varnish"
-    ],
-    "host_scan": [
-      "Content-Security-Policy",
+    "redact": [],
+    "host_scan": ["Content-Security-Policy",
       "Content-Security-Policy-Report-Only",
       "Access-Control-Allow-Origin",
       "Link",
@@ -86,8 +71,7 @@
       "Reporting-Endpoints",
       "NEL",
       "Alt-Svc",
-      "Timing-Allow-Origin"
-    ]
+      "Timing-Allow-Origin"]
   },
   "keep": [
     "Content-Type",

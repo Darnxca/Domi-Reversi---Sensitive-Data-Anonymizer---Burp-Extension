@@ -2,6 +2,7 @@ package com.domireversi.ui;
 
 import com.domireversi.core.Anonymizer;
 import com.domireversi.core.Config;
+import com.domireversi.core.MapFile;
 import com.domireversi.core.Overrides;
 import com.domireversi.core.SubstitutionMap;
 
@@ -47,7 +48,7 @@ public final class DomiReversiTab {
     private final JTabbedPane tabs = new JTabbedPane();
     private final JLabel status = new JLabel(" ");
     private final JLabel summary = new JLabel(" ");
-    private final Config config = Config.loadFromResources();
+    private final Config config = Config.loadWithUserOverrides();
 
     private final HiArea reqIn = new HiArea(true, () -> tr(
             "Incolla qui una request HTTP grezza\noppure, in Burp: tasto destro su una request → Anonymize",
@@ -82,11 +83,21 @@ public final class DomiReversiTab {
             "Paste the LLM reply containing placeholders (HOST_1, EMAIL_2, ...)"));
     private final HiArea deanonOut = new HiArea(false, null);
     private Map<String, String> lastReverse = Map.of();
+    private SubstitutionMap lastMap;
+    /** Mappa caricata da file (de-anonimizzazione di sessioni passate). */
+    private final Map<String, String> importedReverse = new LinkedHashMap<>();
+
+    // ---- sessione continua ----
+    private static final int MAX_HISTORY = 200;
+    private final List<String[]> history = new ArrayList<>();
+    private String[] currentPair;
+    private final JCheckBox chkSession = new JCheckBox();
+    private final JTextField orgField = new JTextField(14);
 
     private final JPanel root = new JPanel(new BorderLayout());
 
     /** Lavoro di anonimizzazione in corso (gira fuori dal thread grafico). */
-    private SwingWorker<String[], Void> currentJob;
+    private SwingWorker<?, Void> currentJob;
 
     public DomiReversiTab() {
         tabs.addTab("", buildAnonTab());
@@ -117,6 +128,10 @@ public final class DomiReversiTab {
         bindKey(respIn, "ctrl ENTER", this::anonymize);
         bindKey(deanonIn, "ctrl ENTER", this::deanonymize);
         relabel();
+        if (!config.loadedOverrides.isEmpty()) {
+            status.setText(tr("Configurazione utente caricata: ", "User configuration loaded: ")
+                    + String.join(", ", config.loadedOverrides));
+        }
     }
 
     public JComponent getComponent() { return root; }
@@ -141,6 +156,96 @@ public final class DomiReversiTab {
         }
     }
 
+    public String menuLabelMany(int n) {
+        return tr("Anonimizza " + n + " messaggi (stessa sessione)", "Anonymize " + n + " messages (same session)");
+    }
+
+    public String menuLabelWebSocket(int n) {
+        return n == 1 ? tr("Anonimizza messaggio WebSocket", "Anonymize WebSocket message")
+                : tr("Anonimizza " + n + " messaggi WebSocket", "Anonymize " + n + " WebSocket messages");
+    }
+
+    public String menuLabelIssue(int n) {
+        return n == 1 ? tr("Anonimizza issue (per l'LLM)", "Anonymize issue (for the LLM)")
+                : tr("Anonimizza " + n + " issue (per l'LLM)", "Anonymize " + n + " issues (for the LLM)");
+    }
+
+    /**
+     * Piu' messaggi selezionati (Proxy history, Logger, Site map...): entrano tutti
+     * nella stessa sessione, in ordine, cosi' i segnaposto sono coerenti; si mostra
+     * l'ultimo e "Copia sessione" li copia tutti.
+     */
+    public void loadMany(List<String[]> pairs) {
+        if (pairs == null || pairs.isEmpty()) return;
+        chkSession.setSelected(true);
+        // il messaggio gia' anonimizzato resta PRIMA dei nuovi: l'ordine della sessione
+        // decide la numerazione, e quella gia' data all'LLM non deve cambiare
+        if (currentPair != null && !(currentPair[0].isBlank() && currentPair[1].isBlank())
+                && history.stream().noneMatch(h -> Arrays.equals(h, currentPair))) {
+            history.add(currentPair);
+        }
+        currentPair = null;
+        for (int i = 0; i < pairs.size() - 1; i++) {
+            String[] p = {norm(pairs.get(i)[0]), norm(pairs.get(i)[1])};
+            if (history.stream().noneMatch(h -> Arrays.equals(h, p))) history.add(p);
+        }
+        while (history.size() > MAX_HISTORY) history.remove(0);
+        setScope(SCOPE_BOTH);
+        String[] last = pairs.get(pairs.size() - 1);
+        load(last[0], last[1]);
+    }
+
+    /** WebSocket o issue: handshake/request a sinistra, trascritto a destra. */
+    public void loadTranscript(String request, String transcript) {
+        setScope(SCOPE_BOTH);
+        load(request == null ? "" : request, transcript);
+    }
+
+    // ---- persistenza nel progetto Burp (facoltativa) ----
+    /** Chiave/valore fornito dall'entry point (Montoya extensionData): la UI non dipende da Burp. */
+    public interface Store {
+        String get(String key);
+
+        void set(String key, String value);
+    }
+
+    private Store store;
+    /** Voci della sessione salvata nel progetto: ogni anonimizzazione riparte da qui. */
+    private final List<String[]> sessionSeed = new ArrayList<>();
+
+    /**
+     * Ripristina campo Cliente, sessione e mappa salvati nel progetto Burp. La mappa
+     * salvata si aggiunge a quelle importate: le risposte dell'LLM di ieri si possono
+     * ancora de-anonimizzare. Il progetto contiene gia' il traffico in chiaro, quindi
+     * non si espone nulla di nuovo.
+     */
+    public void attachStore(Store s) {
+        this.store = s;
+        if (s == null) return;
+        try {
+            String org = s.get("orgTerms");
+            if (org != null) orgField.setText(org);
+            String sess = s.get("session");
+            if (sess != null) chkSession.setSelected(!"false".equals(sess));
+            String m = s.get("map");
+            if (m != null && !m.isBlank()) sessionSeed.addAll(MapFile.importEntries(m));
+        } catch (Exception ignored) {
+            // dati salvati illeggibili: si riparte puliti
+        }
+    }
+
+    private void persist() {
+        if (store == null) return;
+        try {
+            store.set("orgTerms", orgField.getText());
+            store.set("session", String.valueOf(chkSession.isSelected()));
+            // la sessione (con le voci riprese) si salva intera: al riavvio continua
+            store.set("map", lastMap != null && lastMap.size() > 0 ? MapFile.export(lastMap) : "");
+        } catch (Exception ignored) {
+            // la persistenza non deve mai bloccare l'anonimizzazione
+        }
+    }
+
     /** Carica dal menu contestuale, rispettando l'ambito: "solo request" NON
      *  carica la response (e viceversa). */
     public void load(String request, String response) {
@@ -149,8 +254,10 @@ public final class DomiReversiTab {
         respIn.setText(scope == SCOPE_REQUEST ? "" : norm(response));
         reqIn.setCaretPosition(0);
         respIn.setCaretPosition(0);
-        excluded.clear();       // nuovo messaggio -> reset esclusioni
-        forcedValues.clear();   // e reset dei valori forzati
+        if (!chkSession.isSelected()) {
+            excluded.clear();       // nuovo messaggio -> reset esclusioni
+            forcedValues.clear();   // e reset dei valori forzati
+        }                           // in sessione restano: valgono per tutta la chat con l'LLM
         tabs.setSelectedIndex(0);
         anonymize();
     }
@@ -163,6 +270,7 @@ public final class DomiReversiTab {
         tabs.setTitleAt(1, tr("Mappa sostituzioni", "Substitution map"));
         tabs.setTitleAt(2, tr("De-anonimizza", "De-anonymize"));
         chkUa.setText(tr("Anonimizza User-Agent", "Anonymize User-Agent"));
+        chkSession.setText(tr("Sessione continua", "Continuous session"));
         int sc = scopeBox.getSelectedIndex();
         scopeBox.setModel(new DefaultComboBoxModel<>(new String[]{
                 "Request + Response", tr("Solo request", "Request only"), tr("Solo response", "Response only")}));
@@ -269,7 +377,12 @@ public final class DomiReversiTab {
         JButton anon = button("🔒 Anonimizza", "🔒 Anonymize", this::anonymize);
         anon.setFont(anon.getFont().deriveFont(Font.BOLD));
         tooltip(anon, "Anonimizza request e response (Ctrl+Invio)", "Anonymize request and response (Ctrl+Enter)");
-        JButton clear = button("Pulisci", "Clear", this::clear);
+        JButton copyAll = button("Copia sessione", "Copy session", this::copySession);
+        tooltip(copyAll, "Copia tutti i messaggi anonimizzati della sessione, uno dopo l'altro, da incollare nell'LLM",
+                "Copy every anonymized message of the session, one after the other, to paste into the LLM");
+        JButton clear = button("Nuova sessione", "New session", this::clear);
+        tooltip(clear, "Svuota tutto e riparte da HOST_1: usala quando apri una nuova chat con l'LLM",
+                "Clear everything and restart from HOST_1: use it when you open a new chat with the LLM");
         tooltip(chkUa, "Sostituisce anche lo User-Agent con un segnaposto",
                 "Also replace the User-Agent with a placeholder");
 
@@ -286,6 +399,7 @@ public final class DomiReversiTab {
                 "Standard: id, *_id, *_ref, hashes and tracing headers stay readable for debugging. Strict: they become ID_n.");
         left.add(Box.createHorizontalStrut(6));
         left.add(chkUa);
+        left.add(copyAll);
         left.add(clear);
 
         JPanel right = new JPanel(new FlowLayout(FlowLayout.RIGHT, 10, 0));
@@ -296,12 +410,37 @@ public final class DomiReversiTab {
         right.add(langBox);
 
         JPanel bar = new JPanel(new BorderLayout());
-        bar.setBorder(BorderFactory.createEmptyBorder(6, 2, 6, 4));
+        bar.setBorder(BorderFactory.createEmptyBorder(6, 2, 2, 4));
         bar.add(left, BorderLayout.WEST);
         bar.add(right, BorderLayout.EAST);
 
+        // seconda riga: cliente e sessione
+        JPanel opts = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
+        opts.setBorder(BorderFactory.createEmptyBorder(0, 2, 6, 4));
+        opts.add(label("Cliente / termini riservati:", "Client / reserved terms:"));
+        opts.add(orgField);
+        tooltip(orgField,
+                "Nome del cliente, del progetto, codici interni (separati da virgola): diventano ORG_n ovunque, in ogni forma (Acme Corp, acme-corp, acmecorp). Invio per applicare.",
+                "Client name, project name, internal codes (comma separated): they become ORG_n everywhere, in any form (Acme Corp, acme-corp, acmecorp). Enter to apply.");
+        orgField.addActionListener(e -> { persist(); if (!reqIn.getText().isBlank() || !respIn.getText().isBlank()) anonymize(); });
+        orgField.addFocusListener(new java.awt.event.FocusAdapter() {
+            @Override
+            public void focusLost(java.awt.event.FocusEvent e) { persist(); }
+        });
+        opts.add(Box.createHorizontalStrut(8));
+        chkSession.setSelected(true);
+        chkSession.addActionListener(e -> persist());
+        opts.add(chkSession);
+        tooltip(chkSession,
+                "Stessi segnaposto per tutti i messaggi della sessione (una chat con l'LLM): HOST_1 resta lo stesso host e ogni risposta si puo' de-anonimizzare.",
+                "Same placeholders for every message of the session (one chat with the LLM): HOST_1 stays the same host and every reply can be de-anonymized.");
+
+        JPanel top = new JPanel(new BorderLayout());
+        top.add(bar, BorderLayout.NORTH);
+        top.add(opts, BorderLayout.SOUTH);
+
         JPanel panel = new JPanel(new BorderLayout());
-        panel.add(bar, BorderLayout.NORTH);
+        panel.add(top, BorderLayout.NORTH);
         panel.add(io, BorderLayout.CENTER);
         return panel;
     }
@@ -353,6 +492,14 @@ public final class DomiReversiTab {
         });
         tooltip(reset, "Anonimizza di nuovo tutti i valori tenuti in chiaro", "Anonymize again every value kept in clear");
         right.add(reset);
+        JButton exp = button("Esporta…", "Export…", this::exportMap);
+        tooltip(exp, "Salva la mappa in un file JSON per de-anonimizzare in un altro momento. Contiene i valori reali.",
+                "Save the map as a JSON file to de-anonymize later. It contains the real values.");
+        JButton imp = button("Importa…", "Import…", this::importMap);
+        tooltip(imp, "Carica una mappa esportata: i suoi segnaposto si aggiungono a quelli della sessione per la de-anonimizzazione.",
+                "Load an exported map: its placeholders are added to the session ones for de-anonymization.");
+        right.add(exp);
+        right.add(imp);
 
         JPanel top = new JPanel(new BorderLayout(10, 0));
         top.setBorder(BorderFactory.createEmptyBorder(6, 8, 6, 4));
@@ -394,7 +541,7 @@ public final class DomiReversiTab {
         JPanel bar = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 0));
         bar.setBorder(BorderFactory.createEmptyBorder(6, 2, 6, 4));
         bar.add(go);
-        bar.add(label("Usa la mappa dell'ultima anonimizzazione.", "Uses the map of the last anonymization."));
+        bar.add(label("Usa la mappa della sessione e quelle importate. Segnala i segnaposto modificati o inventati dall'LLM.", "Uses the session map and imported maps. Flags placeholders the LLM altered or invented."));
 
         JPanel panel = new JPanel(new BorderLayout());
         panel.add(bar, BorderLayout.NORTH);
@@ -575,15 +722,28 @@ public final class DomiReversiTab {
         anonymize();
     }
 
+    /** Esito di un'anonimizzazione eseguita fuori dal thread grafico. */
+    private static final class JobResult {
+        String outReq = "", outResp = "";
+        SubstitutionMap map;
+        final List<String> warnings = new ArrayList<>();
+        int sessionSize;
+        int decompressed;
+        final List<String[]> outputs = new ArrayList<>();   // tutti i messaggi della sessione, anonimizzati
+    }
+
+    private List<String[]> lastSessionOutputs = List.of();
+
+    /** Termini del campo "Cliente": separati da virgola, punto e virgola o a capo. */
+    private List<String> orgTerms() {
+        List<String> out = new ArrayList<>();
+        for (String t : orgField.getText().split("[,;\\n]")) if (t.trim().length() >= 3) out.add(t.trim());
+        return out;
+    }
+
     private void anonymize() {
         try {
             config.anonymizeUserAgent = chkUa.isSelected();
-            Overrides ov = Overrides.empty()
-                    .withValues(new ArrayList<>(excluded.keySet()))
-                    .withForced(new ArrayList<>(forcedValues));
-            SubstitutionMap map = new SubstitutionMap(ov.excludeValues);
-            Anonymizer eng = new Anonymizer(config, map, ov);
-
             int scope = scopeBox.getSelectedIndex();
             String req = (scope != SCOPE_RESPONSE) ? reqIn.getText() : "";
             String resp = (scope != SCOPE_REQUEST) ? respIn.getText() : "";
@@ -592,35 +752,85 @@ public final class DomiReversiTab {
                         "Nothing to anonymize: paste a request or a response."));
                 return;
             }
+            // Sessione continua: i messaggi precedenti vengono ri-anonimizzati in ordine
+            // con la stessa mappa, cosi' HOST_1 resta lo stesso host in tutta la chat
+            // con l'LLM e ogni risposta si puo' de-anonimizzare.
+            String[] pair = {req, resp};
+            if (chkSession.isSelected() && currentPair != null && !Arrays.equals(currentPair, pair)
+                    && !(currentPair[0].isBlank() && currentPair[1].isBlank())
+                    && history.stream().noneMatch(h -> Arrays.equals(h, currentPair))) {
+                history.add(currentPair);
+                if (history.size() > MAX_HISTORY) history.remove(0);
+            }
+            currentPair = pair;
+            List<String[]> hist = chkSession.isSelected() ? new ArrayList<>(history) : List.of();
+            List<String> org = orgTerms();
+            List<String> excl = new ArrayList<>(excluded.keySet());
+            List<String> forced = new ArrayList<>(forcedValues);
+            List<String[]> seed = chkSession.isSelected() ? new ArrayList<>(sessionSeed) : List.of();
             status.setText(tr("Anonimizzazione in corso…", "Anonymizing…"));
 
             if (currentJob != null) currentJob.cancel(true);
-            SwingWorker<String[], Void> job = new SwingWorker<>() {
+            SwingWorker<JobResult, Void> job = new SwingWorker<>() {
                 @Override
-                protected String[] doInBackground() {
+                protected JobResult doInBackground() {
+                    JobResult r = new JobResult();
+                    Overrides ov = Overrides.empty().withValues(excl).withForced(forced)
+                            .withOrgTerms(org);
+                    SubstitutionMap map = new SubstitutionMap(ov.excludeValues);
+                    Anonymizer eng = new Anonymizer(config, map, ov);
+                    for (String[] s : seed) map.seed(s[0], s[1], s[2]);   // sessione salvata nel progetto
+                    for (String[] h : hist) {                  // stesso ordine, stessa numerazione
+                        eng.reserveLiterals(h[0], h[1]);
+                        r.outputs.add(new String[]{h[0].isBlank() ? "" : eng.anonymizeRequest(h[0]),
+                                h[1].isBlank() ? "" : eng.anonymizeResponse(h[1])});
+                    }
+                    int unzippedBefore = eng.decompressedBodies();
+                    Set<String> clash = new TreeSet<>();
+                    Matcher lm = LITERAL.matcher(req + "\n" + resp);
+                    while (lm.find()) if (map.isEmitted(lm.group())) clash.add(lm.group());
+                    if (!clash.isEmpty()) {
+                        r.warnings.add(tr("testo gia' presente con la forma di segnaposto della sessione: ",
+                                "text already shaped like session placeholders: ") + String.join(", ", clash));
+                    }
                     eng.reserveLiterals(req, resp); // request + response = una sessione
-                    return new String[]{
-                            req.isBlank() ? "" : eng.anonymizeRequest(req),
-                            resp.isBlank() ? "" : eng.anonymizeResponse(resp)};
+                    r.outReq = req.isBlank() ? "" : eng.anonymizeRequest(req);
+                    r.outResp = resp.isBlank() ? "" : eng.anonymizeResponse(resp);
+                    r.outputs.add(new String[]{r.outReq, r.outResp});
+                    r.decompressed = eng.decompressedBodies() - unzippedBefore;
+                    r.map = map;
+                    r.sessionSize = hist.size() + 1;
+                    return r;
                 }
 
                 @Override
                 protected void done() {
                     if (isCancelled() || this != currentJob) return;
                     try {
-                        String[] r = get();
-                        reqOut.setText(r[0]);
-                        respOut.setText(r[1]);
+                        JobResult r = get();
+                        SubstitutionMap map = r.map;
+                        lastMap = map;
+                        lastSessionOutputs = r.outputs;
+                        reqOut.setText(r.outReq);
+                        respOut.setText(r.outResp);
                         reqOut.setCaretPosition(0);
                         respOut.setCaretPosition(0);
                         rebuildMap(map);
                         lastReverse = map.reverseMap();
                         applyHighlights(map);
                         updateSummary(map);
-                        status.setText(tr("Fatto: ", "Done: ") + map.size()
+                        Set<String> client = new LinkedHashSet<>(orgTerms());
+                        client.addAll(map.orgTerms());
+                        StringBuilder st = new StringBuilder(tr("Fatto: ", "Done: ") + map.size()
                                 + tr(" valori sostituiti", " values replaced")
-                                + (excluded.isEmpty() ? "" : ", " + excluded.size() + tr(" tenuti in chiaro", " kept in clear"))
-                                + tr(". Rivedi l'output prima di condividerlo.", ". Review the output before sharing it."));
+                                + (excluded.isEmpty() ? "" : ", " + excluded.size() + tr(" tenuti in chiaro", " kept in clear")));
+                        if (r.decompressed > 0) st.append(tr(" · body decompresso (gzip/deflate)", " · body decompressed (gzip/deflate)"));
+                        if (r.sessionSize > 1) st.append(tr(" · sessione: ", " · session: ")).append(r.sessionSize).append(tr(" messaggi", " messages"));
+                        if (!client.isEmpty()) st.append(tr(" · cliente: ", " · client: ")).append(String.join(", ", client));
+                        for (String w : r.warnings) st.append(" · ⚠ ").append(w);
+                        st.append(tr(". Rivedi l'output prima di condividerlo.", ". Review the output before sharing it."));
+                        status.setText(st.toString());
+                        persist();
                     } catch (Exception ex) {
                         Throwable c = ex.getCause() != null ? ex.getCause() : ex;
                         status.setText(tr("Errore: ", "Error: ") + c.getMessage());
@@ -633,6 +843,9 @@ public final class DomiReversiTab {
             status.setText(tr("Errore: ", "Error: ") + ex.getMessage());
         }
     }
+
+    private static final Pattern LITERAL = Pattern.compile(
+            "(?<![A-Za-z0-9_])[A-Z][A-Z0-9]*(?:_[A-Z][A-Z0-9]*)*_\\d{1,9}(?![A-Za-z0-9_])");
 
     private void rebuildMap(SubstitutionMap map) {
         rebuilding = true;
@@ -653,20 +866,88 @@ public final class DomiReversiTab {
     }
 
     private void deanonymize() {
-        if (lastReverse.isEmpty()) {
-            status.setText(tr("Nessuna mappa: anonimizza prima un messaggio.", "No map yet: anonymize a message first."));
+        Map<String, String> rev = new LinkedHashMap<>(importedReverse);
+        rev.putAll(lastReverse); // la sessione corrente prevale sulla mappa importata
+        if (rev.isEmpty()) {
+            status.setText(tr("Nessuna mappa: anonimizza prima un messaggio o importa una mappa.",
+                    "No map yet: anonymize a message first or import a map."));
             return;
         }
         String in = deanonIn.getText();
-        String out = Anonymizer.deanonymize(in, lastReverse);
-        deanonOut.setText(out);
+        Anonymizer.DeanonResult r = Anonymizer.deanonymizeReport(in, rev);
+        deanonOut.setText(r.text);
         deanonOut.setCaretPosition(0);
-        int n = highlight(deanonIn, lastReverse.keySet(), true);
-        highlight(deanonOut, lastReverse.values(), false);
-        status.setText(n == 0
+        deanonIn.tips = rev;
+        highlight(deanonIn, rev.keySet(), true);
+        highlight(deanonOut, rev.values(), false);
+        StringBuilder st = new StringBuilder(r.replaced == 0
                 ? tr("Nessun segnaposto riconosciuto nel testo.", "No known placeholder found in the text.")
-                : tr("De-anonimizzazione completata: ", "De-anonymization done: ") + n
-                        + tr(" segnaposto sostituiti.", " placeholders replaced."));
+                : tr("De-anonimizzazione completata: ", "De-anonymization done: ") + r.replaced
+                        + tr(" segnaposto sostituiti", " placeholders replaced"));
+        if (r.unescaped > 0) st.append(tr(" (", " (")).append(r.unescaped).append(tr(" con \\_ di markdown)", " with markdown \\_)"));
+        // un segnaposto rimasto si vede, un valore sbagliato no: si segnala, non si indovina
+        if (!r.altered.isEmpty()) st.append(tr(" · ⚠ modificati dall'LLM, NON sostituiti: ", " · ⚠ altered by the LLM, NOT replaced: "))
+                .append(String.join(", ", r.altered.subList(0, Math.min(8, r.altered.size()))));
+        if (!r.unknown.isEmpty()) st.append(tr(" · ⚠ sconosciuti (inventati o di un'altra sessione): ", " · ⚠ unknown (invented or from another session): "))
+                .append(String.join(", ", r.unknown.subList(0, Math.min(8, r.unknown.size()))));
+        status.setText(st.toString());
+    }
+
+    /** Copia tutti i messaggi anonimizzati della sessione, pronti da incollare nell'LLM. */
+    private void copySession() {
+        if (lastSessionOutputs.isEmpty()) {
+            status.setText(tr("Niente da copiare: anonimizza prima un messaggio.", "Nothing to copy: anonymize a message first."));
+            return;
+        }
+        StringBuilder sb = new StringBuilder();
+        int i = 1;
+        for (String[] o : lastSessionOutputs) {
+            if (!o[0].isBlank()) sb.append("===== ").append(tr("Messaggio ", "Message ")).append(i).append(" · request =====\n").append(o[0]).append("\n\n");
+            if (!o[1].isBlank()) sb.append("===== ").append(tr("Messaggio ", "Message ")).append(i).append(" · response =====\n").append(o[1]).append("\n\n");
+            i++;
+        }
+        java.awt.Toolkit.getDefaultToolkit().getSystemClipboard()
+                .setContents(new java.awt.datatransfer.StringSelection(sb.toString()), null);
+        status.setText(tr("Copiati " + lastSessionOutputs.size() + " messaggi anonimizzati della sessione.",
+                "Copied " + lastSessionOutputs.size() + " anonymized messages of the session."));
+    }
+
+    private void exportMap() {
+        if (lastMap == null || lastMap.size() == 0) {
+            status.setText(tr("Mappa vuota: niente da esportare.", "Empty map: nothing to export."));
+            return;
+        }
+        JFileChooser fc = new JFileChooser();
+        fc.setSelectedFile(new java.io.File("domi-reversi-map.json"));
+        if (fc.showSaveDialog(root) != JFileChooser.APPROVE_OPTION) return;
+        try {
+            java.nio.file.Files.writeString(fc.getSelectedFile().toPath(), MapFile.export(lastMap),
+                    java.nio.charset.StandardCharsets.UTF_8);
+            status.setText(tr("Mappa esportata (contiene i valori reali: custodiscila come le evidenze del test).",
+                    "Map exported (it contains the real values: store it like the test evidence)."));
+        } catch (Exception ex) {
+            status.setText(tr("Esportazione non riuscita: ", "Export failed: ") + ex.getMessage());
+        }
+    }
+
+    private void importMap() {
+        JFileChooser fc = new JFileChooser();
+        if (fc.showOpenDialog(root) != JFileChooser.APPROVE_OPTION) return;
+        try {
+            String json = java.nio.file.Files.readString(fc.getSelectedFile().toPath(), java.nio.charset.StandardCharsets.UTF_8);
+            Map<String, String> m = MapFile.importReverse(json);
+            long clash = m.entrySet().stream().filter(e -> lastReverse.containsKey(e.getKey())
+                    && !lastReverse.get(e.getKey()).equals(e.getValue())).count();
+            importedReverse.putAll(m);
+            status.setText(tr("Mappa importata: ", "Map imported: ") + m.size()
+                    + tr(" segnaposto disponibili per la de-anonimizzazione.", " placeholders available for de-anonymization.")
+                    + (clash == 0 ? "" : tr(" ⚠ " + clash + " hanno un valore diverso nella sessione corrente, che prevale:"
+                            + " de-anonimizza quelle risposte in una nuova sessione.",
+                            " ⚠ " + clash + " have a different value in the current session, which wins:"
+                            + " de-anonymize those replies in a new session.")));
+        } catch (Exception ex) {
+            status.setText(tr("Mappa non valida, nulla importato: ", "Invalid map, nothing imported: ") + ex.getMessage());
+        }
     }
 
     private void clear() {
@@ -680,6 +961,12 @@ public final class DomiReversiTab {
         }
         excluded.clear();
         forcedValues.clear();
+        history.clear();          // nuova sessione: nuova numerazione dei segnaposto
+        currentPair = null;
+        lastMap = null;
+        lastSessionOutputs = List.of();
+        sessionSeed.clear();
+        persist();
         rebuilding = true;
         mapModel.setRowCount(0);
         rebuilding = false;
@@ -688,7 +975,8 @@ public final class DomiReversiTab {
         respCount.setText("");
         summary.setText(" ");
         tabs.setTitleAt(1, tr("Mappa sostituzioni", "Substitution map"));
-        status.setText(tr("Pulito.", "Cleared."));
+        status.setText(tr("Nuova sessione: mappa azzerata (la mappa importata resta disponibile).",
+                "New session: map cleared (the imported map stays available)."));
     }
 
     private void copy(JTextArea a) {

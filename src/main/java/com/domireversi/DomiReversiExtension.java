@@ -31,11 +31,29 @@ public final class DomiReversiExtension implements BurpExtension {
         } catch (Throwable ignored) {
             // versioni di Burp senza questa API: resta il font monospazio di default
         }
+        try {
+            // campo Cliente, sessione e mappa salvati nel PROGETTO Burp (che contiene gia'
+            // il traffico): dopo un riavvio la sessione continua con gli stessi segnaposto
+            var data = api.persistence().extensionData();
+            tab.attachStore(new DomiReversiTab.Store() {
+                @Override
+                public String get(String key) {
+                    return data.getString(key);
+                }
+
+                @Override
+                public void set(String key, String value) {
+                    data.setString(key, value);
+                }
+            });
+        } catch (Throwable ignored) {
+            // persistenza non disponibile: si lavora in memoria come prima
+        }
         api.userInterface().registerSuiteTab(TAB_TITLE, tab.getComponent());
         api.userInterface().registerContextMenuItemsProvider(new DomiReversiMenu(tab));
 
         api.logging().logToOutput(
-                EXTENSION_NAME + " caricato. Tasto destro su una request/response "
-                + "> \"Anonimizza con Domi Reversi\", oppure usa il tab dedicato.");
+                EXTENSION_NAME + " caricato. Tasto destro su request/response (anche piu' di una), "
+                + "messaggi WebSocket o issue dello Scanner, oppure usa il tab dedicato.");
     }
 }

@@ -1,0 +1,160 @@
+{
+  "category": "WebSocket, issue e body compressi",
+  "description": "Altro traffico che passa da Burp: messaggi WebSocket (trascritto con l'handshake), issue dello Scanner, body gzip/deflate. 'exact_roundtrip': false dove la ricostruzione restituisce il testo decompresso.",
+  "cases": [
+    {
+      "id": "ws-upgrade",
+      "description": "Handshake WebSocket: cookie e host nascosti",
+      "severity": "critical",
+      "request": "GET /ws HTTP/1.1\nHost: app.acme-corp.it\nUpgrade: websocket\nConnection: Upgrade\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\nCookie: session=k8J2mQ9xLp4Z\n\n",
+      "must_hide": [
+        "k8J2mQ9xLp4Z",
+        "acme-corp"
+      ],
+      "must_keep": [
+        "Upgrade: websocket"
+      ]
+    },
+    {
+      "id": "ws-json-auth",
+      "description": "Frame JSON con token di autenticazione",
+      "severity": "critical",
+      "request": "GET /ws HTTP/1.1\nHost: app.acme-corp.it\nUpgrade: websocket\nConnection: Upgrade\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\nCookie: session=k8J2mQ9xLp4Z\n\n",
+      "response": "### Domi Reversi · WebSocket · wss://app.acme-corp.it/ws\n### #1 client → server\n{\"type\":\"auth\",\"token\":\"tok_9f8e7d6c5b4a3210\"}\n",
+      "must_hide": [
+        "tok_9f8e7d6c5b4a3210"
+      ],
+      "must_keep": [
+        "\"type\":\"auth\""
+      ]
+    },
+    {
+      "id": "ws-chat-pii",
+      "description": "Messaggi di chat con email e nome",
+      "severity": "high",
+      "request": "GET /ws HTTP/1.1\nHost: app.acme-corp.it\nUpgrade: websocket\nConnection: Upgrade\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\nCookie: session=k8J2mQ9xLp4Z\n\n",
+      "response": "### Domi Reversi · WebSocket · wss://app.acme-corp.it/ws\n### #1 client → server\n{\"to\":\"l.verdi@acme-corp.it\",\"fullName\":\"Luca Verdi\",\"text\":\"ciao\"}\n### #2 server → client\n{\"ack\":true}\n",
+      "must_hide": [
+        "l.verdi@acme-corp.it",
+        "Luca Verdi"
+      ],
+      "must_keep": [
+        "client → server"
+      ]
+    },
+    {
+      "id": "ws-socketio",
+      "description": "Frame Socket.IO (prefisso numerico)",
+      "severity": "high",
+      "request": "GET /ws HTTP/1.1\nHost: app.acme-corp.it\nUpgrade: websocket\nConnection: Upgrade\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\nCookie: session=k8J2mQ9xLp4Z\n\n",
+      "response": "### Domi Reversi · WebSocket · wss://app.acme-corp.it/ws\n### #1 client → server\n42[\"login\",{\"email\":\"m.rossi@acme-corp.it\"}]\n",
+      "must_hide": [
+        "m.rossi@acme-corp.it"
+      ],
+      "must_keep": [
+        "42[\"login\""
+      ]
+    },
+    {
+      "id": "ws-stomp",
+      "description": "Frame STOMP CONNECT con passcode",
+      "severity": "critical",
+      "request": "GET /ws HTTP/1.1\nHost: app.acme-corp.it\nUpgrade: websocket\nConnection: Upgrade\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\nCookie: session=k8J2mQ9xLp4Z\n\n",
+      "response": "### Domi Reversi · WebSocket · wss://app.acme-corp.it/ws\n### #1 client → server\nCONNECT\naccept-version:1.2\nlogin:svc\npasscode:St0mpPwd!\n\n\u0000\n",
+      "must_hide": [
+        "St0mpPwd!"
+      ],
+      "must_keep": [
+        "CONNECT"
+      ]
+    },
+    {
+      "id": "ws-graphql",
+      "description": "graphql-ws connection_init con Authorization",
+      "severity": "critical",
+      "request": "GET /ws HTTP/1.1\nHost: app.acme-corp.it\nUpgrade: websocket\nConnection: Upgrade\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\nCookie: session=k8J2mQ9xLp4Z\n\n",
+      "response": "### Domi Reversi · WebSocket · wss://app.acme-corp.it/ws\n### #1 client → server\n{\"type\":\"connection_init\",\"payload\":{\"Authorization\":\"Bearer eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6Im1AYS5pdCJ9.c2lnbmF0dXJlRkFLRQ\"}}\n",
+      "must_hide": [
+        "eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6Im1AYS5pdCJ9.c2lnbmF0dXJlRkFLRQ"
+      ],
+      "must_keep": [
+        "\"connection_init\""
+      ]
+    },
+    {
+      "id": "ws-signalr",
+      "description": "SignalR (JSON terminato da 0x1E)",
+      "severity": "high",
+      "request": "GET /ws HTTP/1.1\nHost: app.acme-corp.it\nUpgrade: websocket\nConnection: Upgrade\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\nCookie: session=k8J2mQ9xLp4Z\n\n",
+      "response": "### Domi Reversi · WebSocket · wss://app.acme-corp.it/ws\n### #1 client → server\n{\"type\":1,\"target\":\"Send\",\"arguments\":[\"r.neri@acme-corp.it\"]}\u001e\n",
+      "must_hide": [
+        "r.neri@acme-corp.it"
+      ],
+      "must_keep": [
+        "\"target\":\"Send\""
+      ]
+    },
+    {
+      "id": "ws-payload-attacco",
+      "description": "Payload XSS via WebSocket: intatto",
+      "severity": "low",
+      "request": "GET /ws HTTP/1.1\nHost: app.acme-corp.it\nUpgrade: websocket\nConnection: Upgrade\nSec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\nCookie: session=k8J2mQ9xLp4Z\n\n",
+      "response": "### Domi Reversi · WebSocket · wss://app.acme-corp.it/ws\n### #1 client → server\n{\"msg\":\"<img src=x onerror=alert(1)>\"}\n",
+      "must_hide": [],
+      "must_keep": [
+        "<img src=x onerror=alert(1)>"
+      ]
+    },
+    {
+      "id": "issue-scanner",
+      "description": "Issue dello Scanner con host ed email nel dettaglio",
+      "severity": "high",
+      "request": "GET /item?id=1 HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "### Domi Reversi · Burp issue\n### SQL injection · high / firm\n### URL: https://app.acme-corp.it/item\n### Dettaglio\n<p>The <b>id</b> parameter on app.acme-corp.it appears vulnerable. Error mentions admin@acme-corp.it.</p>\n### Rimedio\n<p>Use parameterized queries.</p>\n",
+      "must_hide": [
+        "acme-corp",
+        "admin@acme-corp.it"
+      ],
+      "must_keep": [
+        "SQL injection",
+        "Rimedio"
+      ]
+    },
+    {
+      "id": "gzip-body",
+      "description": "Body gzip: decompresso e anonimizzato",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: application/json\nContent-Encoding: gzip\n\n\u001f\b\u0000\u0000\u0000\u0000\u0000\u0002ÿ«VJÍMÌÌQ²RJ×KÊLÌKÎÈtHLÎMÕMÎ/*ÐË,QÒQÊÏV²*)*M­\u0005\u0000<xÒì,\u0000\u0000\u0000",
+      "must_hide": [
+        "g.bianchi@acme-corp.it"
+      ],
+      "must_keep": [
+        "\"ok\":true"
+      ],
+      "exact_roundtrip": false
+    },
+    {
+      "id": "deflate-body",
+      "description": "Body deflate (zlib): decompresso e anonimizzato",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: application/json\nContent-Encoding: deflate\n\nx«V*H,..Ï/JQ²RrIMË1)I\rPTª\u0005\u0000k<\b'",
+      "must_hide": [
+        "Defl4teP!"
+      ],
+      "exact_roundtrip": false
+    },
+    {
+      "id": "brotli-non-decompresso",
+      "description": "Body brotli: il JDK non lo decomprime e l'estensione non aggiunge dipendenze; resta com'e' (Burp di solito lo mostra gia' decompresso)",
+      "severity": "low",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: application/json\nContent-Encoding: br\n\n\u000b\u0002binary",
+      "must_hide": [],
+      "must_keep": [
+        "Content-Encoding: br"
+      ]
+    }
+  ]
+}

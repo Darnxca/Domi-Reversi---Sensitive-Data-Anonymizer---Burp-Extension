@@ -40,6 +40,70 @@ public final class Config {
 
     public boolean strictIds() { return LEVEL_STRICT.equalsIgnoreCase(level); }
 
+    // ---- regole di contesto (sezione "context" di sensitive_patterns.json) ----
+    // Liste che decidono COSA e' sensibile per il contesto in cui compare: si
+    // estendono dal JSON, anche con un file utente, senza ricompilare.
+    /** Etichette di dominio che non identificano un cliente (CDN, SaaS, parole generiche). */
+    public final Set<String> orgStop = new HashSet<>();
+    /** Suffissi pubblici a due livelli (co.uk, com.br...). */
+    public final Set<String> twoLevelSuffixes = new HashSet<>();
+    /** Chiavi il cui valore e' un nome di macchina (normalizzate). */
+    public final Set<String> hostKeys = new HashSet<>();
+    /** Segmenti che seguono /users/, C:\\Users\\ ma non sono persone. */
+    public final Set<String> notUsernames = new HashSet<>();
+    /** Parole dopo un saluto ("Gentile Cliente") che non sono nomi. */
+    public final Set<String> notNames = new HashSet<>();
+    /** Utenze tipiche: "admin / X" in un commento e' una credenziale anche senza parole chiave. */
+    public final Set<String> commonUsers = new HashSet<>();
+    /** Parole che in un commento indicano credenziali (sottostringhe, minuscolo). */
+    public final List<String> credentialHints = new ArrayList<>();
+    /** XML-RPC: metodo (o prefisso con '.') -> {posizione username, posizione password}, 1-based. */
+    public final java.util.Map<String, int[]> xmlrpcCredentials = new java.util.HashMap<>();
+    /** vCard / iCalendar: proprieta' (maiuscolo) -> prefisso del segnaposto. */
+    public final java.util.Map<String, String> vcardProperties = new java.util.HashMap<>();
+    /** Claim JWT che identificano una persona (normalizzati). */
+    public final Set<String> jwtIdentityClaims = new HashSet<>();
+    /** Valori pubblici e non identificativi mai sostituiti (loopback, metadata cloud, domini d'esempio). */
+    public final Set<String> keepValues = new HashSet<>();
+    /** Sintassi d'attacco: un valore che la contiene e' un payload del tester e resta leggibile. */
+    public final List<Pattern> attackMarkers = new ArrayList<>();
+    /** Lunghezza minima di un nome di cliente ricavato da un dominio senza trattini o cifre. */
+    public int orgMinLength = 6;
+
+    /** File utente caricati in aggiunta a quelli inclusi (per mostrarlo nella UI). */
+    public final List<String> loadedOverrides = new ArrayList<>();
+
+    /** Cartella dei file utente: -Ddomireversi.config.dir oppure ~/.domi-reversi */
+    public static java.nio.file.Path userConfigDir() {
+        String p = System.getProperty("domireversi.config.dir");
+        if (p == null || p.isBlank()) p = System.getProperty("user.home", "") + java.io.File.separator + ".domi-reversi";
+        return java.nio.file.Paths.get(p);
+    }
+
+    /**
+     * Configurazione inclusa + file utente facoltativi con lo stesso formato
+     * (sensitive_patterns.json, sensitive_headers.json nella cartella utente).
+     * I file utente si SOMMANO a quelli inclusi: pattern, chiavi e liste di
+     * contesto in piu', strategie di header e opzioni che sostituiscono le
+     * esistenti. Solo lettura: l'estensione non scrive nulla su disco.
+     */
+    public static Config loadWithUserOverrides() {
+        Config c = loadFromResources();
+        java.nio.file.Path dir = userConfigDir();
+        for (String f : new String[]{"sensitive_headers.json", "sensitive_patterns.json"}) {
+            java.nio.file.Path p = dir.resolve(f);
+            try {
+                if (!java.nio.file.Files.isRegularFile(p)) continue;
+                String json = java.nio.file.Files.readString(p, StandardCharsets.UTF_8);
+                if (f.startsWith("sensitive_headers")) c.parseHeaders(json); else c.parsePatterns(json);
+                c.loadedOverrides.add(p.toString());
+            } catch (Exception ignored) {
+                // file utente illeggibile: si resta sulla configurazione inclusa
+            }
+        }
+        return c;
+    }
+
     public static String normKey(String key) {
         StringBuilder sb = new StringBuilder(key.length());
         for (int i = 0; i < key.length(); i++) {
@@ -137,12 +201,57 @@ public final class Config {
                     for (JsonElement k : opt.getAsJsonArray("preserve_keys")) preserveKeys.add(normKey(k.getAsString()));
                 }
             }
+            if (root.has("context") && root.get("context").isJsonObject()) {
+                JsonObject ctx = root.getAsJsonObject("context");
+                addAll(ctx, "org_stop", orgStop, false);
+                addAll(ctx, "two_level_suffixes", twoLevelSuffixes, false);
+                addAll(ctx, "host_keys", hostKeys, true);
+                addAll(ctx, "not_usernames", notUsernames, false);
+                addAll(ctx, "not_names", notNames, false);
+                addAll(ctx, "common_users", commonUsers, false);
+                Set<String> hints = new HashSet<>();
+                addAll(ctx, "credential_hints", hints, false);
+                for (String h : hints) if (!credentialHints.contains(h)) credentialHints.add(h);
+                addAll(ctx, "keep_values", keepValues, false);
+                if (ctx.has("xmlrpc_credentials") && ctx.get("xmlrpc_credentials").isJsonObject()) {
+                    for (java.util.Map.Entry<String, JsonElement> e : ctx.getAsJsonObject("xmlrpc_credentials").entrySet()) {
+                        if (!e.getValue().isJsonArray() || e.getValue().getAsJsonArray().size() != 2) continue;
+                        xmlrpcCredentials.put(e.getKey(), new int[]{e.getValue().getAsJsonArray().get(0).getAsInt(),
+                                e.getValue().getAsJsonArray().get(1).getAsInt()});
+                    }
+                }
+                if (ctx.has("vcard_properties") && ctx.get("vcard_properties").isJsonObject()) {
+                    for (java.util.Map.Entry<String, JsonElement> e : ctx.getAsJsonObject("vcard_properties").entrySet()) {
+                        vcardProperties.put(e.getKey().toUpperCase(java.util.Locale.ROOT), e.getValue().getAsString());
+                    }
+                }
+                addAll(ctx, "jwt_identity_claims", jwtIdentityClaims, true);
+                if (ctx.has("attack_markers") && ctx.get("attack_markers").isJsonArray()) {
+                    for (JsonElement m : ctx.getAsJsonArray("attack_markers")) {
+                        try {
+                            attackMarkers.add(Pattern.compile(m.getAsString(), Pattern.CASE_INSENSITIVE));
+                        } catch (Exception badRegex) {
+                            // marcatore non valido: saltato
+                        }
+                    }
+                }
+                if (ctx.has("org_min_length")) orgMinLength = Math.max(3, ctx.get("org_min_length").getAsInt());
+            }
             if (root.has("key_prefix_map") && root.get("key_prefix_map").isJsonObject()) {
                 for (Map.Entry<String, JsonElement> e : root.getAsJsonObject("key_prefix_map").entrySet()) {
                     keyPrefixMap.put(e.getKey().toLowerCase(), e.getValue().getAsString());
                 }
             }
         } catch (Exception ignored) {
+        }
+    }
+
+    private static void addAll(JsonObject obj, String name, Set<String> into, boolean normalize) {
+        if (!obj.has(name) || !obj.get(name).isJsonArray()) return;
+        for (JsonElement e : obj.getAsJsonArray(name)) {
+            String s = e.getAsString().trim();
+            if (s.isEmpty()) continue;
+            into.add(normalize ? normKey(s) : s.toLowerCase(java.util.Locale.ROOT));
         }
     }
 

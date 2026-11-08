@@ -21,6 +21,7 @@ The extension jar is written to `build/libs/`. Reports:
 | Unit tests | `build/reports/tests/test/index.html` |
 | Audit | `build/reports/audit/index.html` |
 | Adversarial round-trip | `build/reports/adversarial/report.md` |
+| Edge-case catalog | `build/reports/edgecases/report.md` |
 
 ## Project layout
 
@@ -32,18 +33,25 @@ src/main/java/com/domireversi/
     Anonymizer.java           pipeline: headers, bodies, patterns, reversibility
     SubstitutionMap.java      consistent, reversible placeholders
     HttpMessage.java          byte-preserving HTTP parser
-    Config.java               loads the JSON rules below
+    Config.java               loads the JSON rules below (+ user files in ~/.domi-reversi)
+    MapFile.java              map export / import
   ui/DomiReversiTab.java      Swing user interface
 src/main/resources/
   sensitive_headers.json      header strategies
   sensitive_patterns.json     detectors, sensitive keys, levels
 src/test/                     unit, audit, adversarial and GraphQL tests
+src/test/resources/edgecases/ data-driven edge-case catalog (one JSON entry per case)
+docs/EXTENDING.md             how to add detectors, keys, context lists and cases
 ```
 
 ## Rules for changes
 
-- **Every fix or new detector needs a regression test.** Leak tests go in
-  `AnonymizationAuditTest`, exact-reversibility cases in `AdversarialRoundTripTest`.
+- **Every fix or new detector needs a regression test.** The quickest way is an entry in
+  `src/test/resources/edgecases/*.json` (`must_hide`, `must_keep`; round trip is checked
+  automatically). Generated leak tests go in `AnonymizationAuditTest`, exact-reversibility cases
+  in `AdversarialRoundTripTest`.
+- **Pentest-aware:** a payload the tester wrote must stay readable (add a `must_keep`), the data
+  it exfiltrates must disappear (add a `must_hide`).
 - **Exact reversibility:** `deanonymize(anonymize(message)) == message` byte for byte.
   Never "normalize" input (whitespace, encodings, line endings).
 - **No unbounded repeated groups in regexes** applied to arbitrary input: they can

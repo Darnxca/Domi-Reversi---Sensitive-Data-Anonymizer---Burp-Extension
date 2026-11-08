@@ -1,0 +1,184 @@
+{
+  "category": "De-anonimizzazione delle risposte dell'LLM",
+  "description": "Gli LLM riscrivono i segnaposto (markdown, maiuscole, invenzioni): cosa viene ripristinato e cosa segnalato.",
+  "cases": [
+    {
+      "id": "deanon-base",
+      "description": "Segnaposto in un URL",
+      "severity": "high",
+      "map": {
+        "HOST_1": "app.acme-corp.it",
+        "EMAIL_1": "m.rossi@acme-corp.it",
+        "AUTH_TOKEN_1": "eyJabc.def.ghi",
+        "EMAIL_1_URL": "m.rossi%40acme-corp.it",
+        "USERNAME_1": "mrossi"
+      },
+      "llm_text": "curl https://HOST_1/x?mail=EMAIL_1",
+      "expect": "curl https://app.acme-corp.it/x?mail=m.rossi@acme-corp.it"
+    },
+    {
+      "id": "deanon-markdown-escape",
+      "description": "Underscore escapato da markdown",
+      "severity": "high",
+      "map": {
+        "HOST_1": "app.acme-corp.it",
+        "EMAIL_1": "m.rossi@acme-corp.it",
+        "AUTH_TOKEN_1": "eyJabc.def.ghi",
+        "EMAIL_1_URL": "m.rossi%40acme-corp.it",
+        "USERNAME_1": "mrossi"
+      },
+      "llm_text": "Prova `HOST\\_1` con EMAIL\\_1",
+      "expect": "Prova `app.acme-corp.it` con m.rossi@acme-corp.it"
+    },
+    {
+      "id": "deanon-grassetto",
+      "description": "Segnaposto in grassetto",
+      "severity": "medium",
+      "map": {
+        "HOST_1": "app.acme-corp.it",
+        "EMAIL_1": "m.rossi@acme-corp.it",
+        "AUTH_TOKEN_1": "eyJabc.def.ghi",
+        "EMAIL_1_URL": "m.rossi%40acme-corp.it",
+        "USERNAME_1": "mrossi"
+      },
+      "llm_text": "**HOST_1**",
+      "expect": "**app.acme-corp.it**"
+    },
+    {
+      "id": "deanon-dopo-backslash",
+      "description": "Segnaposto in un percorso Windows",
+      "severity": "high",
+      "map": {
+        "HOST_1": "app.acme-corp.it",
+        "EMAIL_1": "m.rossi@acme-corp.it",
+        "AUTH_TOKEN_1": "eyJabc.def.ghi",
+        "EMAIL_1_URL": "m.rossi%40acme-corp.it",
+        "USERNAME_1": "mrossi"
+      },
+      "llm_text": "C:\\Users\\USERNAME_1\\AppData",
+      "expect": "C:\\Users\\mrossi\\AppData"
+    },
+    {
+      "id": "deanon-variante-url",
+      "description": "Variante URL-encoded",
+      "severity": "high",
+      "map": {
+        "HOST_1": "app.acme-corp.it",
+        "EMAIL_1": "m.rossi@acme-corp.it",
+        "AUTH_TOKEN_1": "eyJabc.def.ghi",
+        "EMAIL_1_URL": "m.rossi%40acme-corp.it",
+        "USERNAME_1": "mrossi"
+      },
+      "llm_text": "?e=EMAIL_1_URL",
+      "expect": "?e=m.rossi%40acme-corp.it"
+    },
+    {
+      "id": "deanon-dopo-percent",
+      "description": "Segnaposto subito dopo %22",
+      "severity": "medium",
+      "map": {
+        "HOST_1": "app.acme-corp.it",
+        "EMAIL_1": "m.rossi@acme-corp.it",
+        "AUTH_TOKEN_1": "eyJabc.def.ghi",
+        "EMAIL_1_URL": "m.rossi%40acme-corp.it",
+        "USERNAME_1": "mrossi"
+      },
+      "llm_text": "q=%22EMAIL_1%22",
+      "expect": "q=%22m.rossi@acme-corp.it%22"
+    },
+    {
+      "id": "deanon-minuscolo",
+      "description": "L'LLM scrive host_1: non sostituito, segnalato",
+      "severity": "high",
+      "map": {
+        "HOST_1": "app.acme-corp.it",
+        "EMAIL_1": "m.rossi@acme-corp.it",
+        "AUTH_TOKEN_1": "eyJabc.def.ghi",
+        "EMAIL_1_URL": "m.rossi%40acme-corp.it",
+        "USERNAME_1": "mrossi"
+      },
+      "llm_text": "l'host host_1 risponde",
+      "expect": "l'host host_1 risponde",
+      "expect_altered": [
+        "host_1"
+      ]
+    },
+    {
+      "id": "deanon-suffisso",
+      "description": "L'LLM aggiunge un suffisso: segnalato",
+      "severity": "medium",
+      "map": {
+        "HOST_1": "app.acme-corp.it",
+        "EMAIL_1": "m.rossi@acme-corp.it",
+        "AUTH_TOKEN_1": "eyJabc.def.ghi",
+        "EMAIL_1_URL": "m.rossi%40acme-corp.it",
+        "USERNAME_1": "mrossi"
+      },
+      "llm_text": "i due HOST_1s",
+      "expect": "i due HOST_1s",
+      "expect_altered": [
+        "HOST_1s"
+      ]
+    },
+    {
+      "id": "deanon-inventato",
+      "description": "Segnaposto inventato dall'LLM: segnalato",
+      "severity": "high",
+      "map": {
+        "HOST_1": "app.acme-corp.it",
+        "EMAIL_1": "m.rossi@acme-corp.it",
+        "AUTH_TOKEN_1": "eyJabc.def.ghi",
+        "EMAIL_1_URL": "m.rossi%40acme-corp.it",
+        "USERNAME_1": "mrossi"
+      },
+      "llm_text": "prova anche HOST_2 e EMAIL_7",
+      "expect": "prova anche HOST_2 e EMAIL_7",
+      "expect_unknown": [
+        "HOST_2",
+        "EMAIL_7"
+      ]
+    },
+    {
+      "id": "deanon-tipo-estraneo",
+      "description": "Variabile con forma simile ma tipo non nostro: ignorata",
+      "severity": "low",
+      "map": {
+        "HOST_1": "app.acme-corp.it",
+        "EMAIL_1": "m.rossi@acme-corp.it",
+        "AUTH_TOKEN_1": "eyJabc.def.ghi",
+        "EMAIL_1_URL": "m.rossi%40acme-corp.it",
+        "USERNAME_1": "mrossi"
+      },
+      "llm_text": "set VAR_1 and STEP_2",
+      "expect": "set VAR_1 and STEP_2"
+    },
+    {
+      "id": "deanon-dentro-parola",
+      "description": "Segnaposto incollato a una parola: non toccato",
+      "severity": "low",
+      "map": {
+        "HOST_1": "app.acme-corp.it",
+        "EMAIL_1": "m.rossi@acme-corp.it",
+        "AUTH_TOKEN_1": "eyJabc.def.ghi",
+        "EMAIL_1_URL": "m.rossi%40acme-corp.it",
+        "USERNAME_1": "mrossi"
+      },
+      "llm_text": "xHOST_1y",
+      "expect": "xHOST_1y"
+    },
+    {
+      "id": "deanon-variante-parola",
+      "description": "Variante per parola intera (da 'acmecorp_sid'); ORG_1_x scritto dall'LLM non si tocca e si segnala",
+      "severity": "high",
+      "map": {
+        "ORG_1": "acmecorp",
+        "ORG_1_W": "acmecorp_sid"
+      },
+      "llm_text": "cookie ORG_1_W; vedi anche ORG_1_x",
+      "expect": "cookie acmecorp_sid; vedi anche ORG_1_x",
+      "expect_altered": [
+        "ORG_1_x"
+      ]
+    }
+  ]
+}

@@ -41,7 +41,7 @@ public final class SubstitutionMap {
             "HOST", "IP", "EMAIL", "TOKEN", "AUTH_TOKEN", "SESSION", "COOKIE", "APIKEY", "SECRET",
             "JWT", "CARD", "CARD_EXP", "IBAN", "CF", "PIVA", "PHONE", "PRIVATE_KEY", "USERNAME",
             "NAME", "ADDRESS", "DOB", "SSN", "OTP", "PIN", "CVV", "CUSTOM", "FILENAME", "FILE",
-            "USER_AGENT", "MAC", "PASSWORD", "URL", "ID");
+            "USER_AGENT", "MAC", "PASSWORD", "URL", "ID", "ORG", "PLATE", "REDACTED", "GEO", "HEALTH", "WALLET", "JWT_SIG", "DOCID");
 
     private static final Pattern PLACEHOLDER_SHAPE =
             Pattern.compile("([A-Z][A-Z0-9]*(?:_[A-Z][A-Z0-9]*)*)_\\d{1,9}");
@@ -58,6 +58,8 @@ public final class SubstitutionMap {
     private final Map<String, String> variantRoot = new HashMap<>();
     /** Testi gia' presenti nei messaggi con forma di placeholder: mai generati. */
     private final Set<String> reserved = new HashSet<>();
+    /** Nomi dell'organizzazione cliente ricavati dagli host di destinazione (sessione). */
+    private final Set<String> orgTerms = new java.util.LinkedHashSet<>();
     private int version = 0;
 
     public SubstitutionMap() {
@@ -78,8 +80,16 @@ public final class SubstitutionMap {
         if (isExcluded(original)) {
             return original; // override utente: non anonimizzare
         }
+        if (keepFilter != null && keepFilter.test(original, prefix)) {
+            return original; // es. payload d'attacco scritto dal tester: deve restare leggibile
+        }
         if (looksLikePlaceholder(original)) {
             return original; // gia' anonimizzato: non ri-mappare
+        }
+        if (containsEmitted(original)) {
+            // "NAME_1:mailto:EMAIL_1": un segnaposto dentro un altro non tornerebbe indietro
+            // (la de-anonimizzazione e' a passata singola); le parti sono gia' nascoste
+            return original;
         }
         String existing = byValue.get(original);
         if (existing != null) {
@@ -127,6 +137,107 @@ public final class SubstitutionMap {
         // "VAL_A_1234" ha la stessa forma ma deve comunque essere anonimizzato
         Matcher m = PLACEHOLDER_SHAPE.matcher(literal);
         if (m.matches() && KNOWN_PREFIXES.contains(m.group(1))) reserved.add(literal);
+    }
+
+    private static final java.util.regex.Pattern SEED_PH = java.util.regex.Pattern.compile(
+            "^([A-Z][A-Z0-9]*(?:_[A-Z][A-Z0-9]*)*?)_(\\d{1,9})(?:_.*)?$");
+
+    /**
+     * Riprende una voce di una sessione salvata (progetto Burp) con il SUO segnaposto:
+     * i vecchi segnaposto mantengono il significato e i valori nuovi continuano la
+     * numerazione, cosi' una risposta dell'LLM di ieri non viene mai ricostruita con
+     * il valore di un'altra sessione.
+     */
+    public void seed(String ph, String original, String type) {
+        if (ph == null || original == null || placeholders.contains(ph) || isExcluded(original)) return;
+        java.util.regex.Matcher m = SEED_PH.matcher(ph);
+        if (!m.matches()) return;
+        String prefix = m.group(1);
+        boolean variant = ph.length() > m.end(2);
+        String t = type != null && !type.isEmpty() ? type : prefix;
+        if (!variant) {
+            byValue.putIfAbsent(original, ph);
+            String canon = canonicalKey(prefix, original);
+            if (canon != null) byValue.putIfAbsent(canon, ph);
+            int n = Integer.parseInt(m.group(2));
+            if (counters.getOrDefault(prefix, 0) < n) counters.put(prefix, n);
+            if (prefix.equals("HOST") || prefix.equals("IP")) hostIndex.putIfAbsent(original.toLowerCase(Locale.ROOT), ph);
+        } else {
+            variantRoot.put(ph, ph.substring(0, m.end(2)));
+        }
+        entries.add(new Entry(original, ph, t));
+        placeholders.add(ph);
+        phToOriginal.putIfAbsent(ph, original);
+        version++;
+    }
+
+    /** Copia dello stato, per annullare un tentativo (vedi restore). */
+    public SubstitutionMap snapshot() {
+        SubstitutionMap c = new SubstitutionMap(exclude);
+        c.copyFrom(this);
+        return c;
+    }
+
+    /** Ripristina lo stato salvato con snapshot(). */
+    public void restore(SubstitutionMap s) {
+        copyFrom(s);
+    }
+
+    private void copyFrom(SubstitutionMap o) {
+        byValue.clear(); byValue.putAll(o.byValue);
+        counters.clear(); counters.putAll(o.counters);
+        entries.clear(); entries.addAll(o.entries);
+        placeholders.clear(); placeholders.addAll(o.placeholders);
+        hostIndex.clear(); hostIndex.putAll(o.hostIndex);
+        phToOriginal.clear(); phToOriginal.putAll(o.phToOriginal);
+        variantRoot.clear(); variantRoot.putAll(o.variantRoot);
+        reserved.clear(); reserved.addAll(o.reserved);
+        orgTerms.clear(); orgTerms.addAll(o.orgTerms);
+        exclude.clear(); exclude.addAll(o.exclude);
+        excludeLower.clear(); excludeLower.addAll(o.excludeLower);
+        keepFilter = o.keepFilter;
+        version = o.version + 1;
+    }
+
+    /** Filtro dei valori da lasciare sempre in chiaro (es. payload d'attacco). */
+    private java.util.function.BiPredicate<String, String> keepFilter;
+
+    /** (valore, prefisso) -> true se il valore deve restare leggibile. */
+    public void setKeepFilter(java.util.function.BiPredicate<String, String> filter) {
+        this.keepFilter = filter;
+    }
+
+    /** Valori pubblici e non identificativi da non sostituire mai (127.0.0.1, metadata cloud...). */
+    public void addExcluded(java.util.Collection<String> values) {
+        if (values == null) return;
+        for (String v : values) {
+            if (v == null || v.isEmpty()) continue;
+            exclude.add(v);
+            excludeLower.add(v.toLowerCase(Locale.ROOT));
+        }
+    }
+
+    /** Registra il nome dell'organizzazione cliente (es. "acme-corp" da app.acme-corp.it). */
+    public void addOrgTerm(String term) {
+        if (term == null) return;
+        String t = term.trim().toLowerCase(Locale.ROOT);
+        if (t.length() >= 3 && !isExcluded(t) && orgTerms.add(t)) version++;
+    }
+
+    /** Nomi dell'organizzazione cliente noti in questa sessione (minuscolo). */
+    public Set<String> orgTerms() {
+        return Collections.unmodifiableSet(orgTerms);
+    }
+
+    private static final java.util.regex.Pattern EMBEDDED_PH = java.util.regex.Pattern.compile(
+            "(?<![A-Za-z0-9_])[A-Z][A-Z0-9]{0,40}(?:_[A-Z][A-Z0-9]{0,40}){0,8}_\\d{1,9}(?![A-Za-z0-9_])");
+
+    /** True se il testo contiene un segnaposto gia' emesso da questa mappa. */
+    public boolean containsEmitted(String s) {
+        if (placeholders.isEmpty() || s.length() < 3 || s.indexOf('_') < 0) return false;
+        java.util.regex.Matcher m = EMBEDDED_PH.matcher(s);
+        while (m.find()) if (placeholders.contains(m.group())) return true;
+        return false;
     }
 
     /** True se il token e' stato emesso da questa mappa (placeholder o variante). */
@@ -228,6 +339,10 @@ public final class SubstitutionMap {
                 break;
             case "PHONE":
                 c = v.replaceAll("[^0-9+]", "");
+                break;
+            case "ORG":
+                // "Acme Corp", "acme-corp", "acmecorp": stessa organizzazione, stessa radice
+                c = v.toLowerCase(Locale.ROOT).replaceAll("[\\s._-]", "");
                 break;
             default:
                 return null;

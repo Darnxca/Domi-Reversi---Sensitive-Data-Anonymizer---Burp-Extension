@@ -1,0 +1,443 @@
+{
+  "category": "Protocolli e formati",
+  "description": "Tutto cio' che puo' passare da Burp oltre a REST/JSON: GraphQL in ogni forma, JSON-RPC, XML-RPC (WordPress), SOAP, OData, SSE, JSONP, vCard/iCal, WebDAV, LDIF, metriche; binari decodificati (gRPC, gRPC-web, protobuf, MessagePack: exact_roundtrip false) e binari con nomi di campo trattati sul posto (BSON, AMF, Hessian, WCF msbin1, Thrift, CBOR).",
+  "cases": [
+    {
+      "id": "gql-post",
+      "description": "GraphQL POST: query leggibile, variabili nascoste",
+      "severity": "critical",
+      "request": "POST /graphql HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"query\":\"query($e:String!){user(email:$e){id}}\",\"variables\":{\"e\":\"m.rossi@acme-corp.it\"}}",
+      "must_hide": [
+        "m.rossi"
+      ],
+      "must_keep": [
+        "user(email:$e)"
+      ]
+    },
+    {
+      "id": "gql-get",
+      "description": "GraphQL via GET con argomento inline",
+      "severity": "critical",
+      "request": "GET /graphql?query=query%20%7B%20user%28email%3A%20%22m.rossi%40acme-corp.it%22%29%20%7B%20id%20%7D%20%7D HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "must_hide": [
+        "m.rossi"
+      ],
+      "must_keep": [
+        "graphql?query="
+      ]
+    },
+    {
+      "id": "gql-batch",
+      "description": "GraphQL batch (array di operazioni)",
+      "severity": "critical",
+      "request": "POST /graphql HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n[{\"query\":\"{a}\",\"variables\":{\"email\":\"m.rossi@acme-corp.it\"}},{\"query\":\"{b}\"}]",
+      "must_hide": [
+        "m.rossi"
+      ],
+      "must_keep": [
+        "\"query\":\"{a}\""
+      ]
+    },
+    {
+      "id": "gql-persisted",
+      "description": "Persisted query di Apollo (hash + variabili nell'URL)",
+      "severity": "high",
+      "request": "GET /graphql?extensions=%7B%22persistedQuery%22%3A%7B%22sha256Hash%22%3A%22abc%22%7D%7D&variables=%7B%22email%22%3A%22m.rossi%40acme-corp.it%22%7D HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "must_hide": [
+        "m.rossi"
+      ],
+      "must_keep": [
+        "persistedQuery"
+      ]
+    },
+    {
+      "id": "gql-errors",
+      "description": "Risposta GraphQL con errori che citano dati",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: application/json\n\n{\"errors\":[{\"message\":\"User m.rossi@acme-corp.it not found\",\"path\":[\"user\"]}]}",
+      "must_hide": [
+        "m.rossi"
+      ],
+      "must_keep": [
+        "\"errors\""
+      ]
+    },
+    {
+      "id": "gql-introspection-resp",
+      "description": "Risposta d'introspezione: schema leggibile",
+      "severity": "low",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: application/json\n\n{\"data\":{\"__schema\":{\"types\":[{\"name\":\"User\",\"fields\":[{\"name\":\"email\"},{\"name\":\"passwordHash\"}]}]}}}",
+      "must_hide": [],
+      "must_keep": [
+        "\"__schema\"",
+        "\"name\":\"User\""
+      ]
+    },
+    {
+      "id": "jsonrpc",
+      "description": "JSON-RPC 2.0",
+      "severity": "critical",
+      "request": "POST /rpc HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"jsonrpc\":\"2.0\",\"method\":\"login\",\"params\":{\"user\":\"admin\",\"password\":\"Rpc!Pwd2024\"},\"id\":1}",
+      "must_hide": [
+        "Rpc!Pwd2024"
+      ],
+      "must_keep": [
+        "\"method\":\"login\""
+      ]
+    },
+    {
+      "id": "xmlrpc-wp-getusersblogs",
+      "description": "XML-RPC WordPress: brute force con wp.getUsersBlogs",
+      "severity": "critical",
+      "request": "POST /xmlrpc.php HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: text/xml\n\n<methodCall><methodName>wp.getUsersBlogs</methodName><params><param><value><string>mrossi</string></value></param><param><value><string>XmlRpc!Pwd9</string></value></param></params></methodCall>",
+      "must_hide": [
+        "XmlRpc!Pwd9",
+        "mrossi"
+      ],
+      "must_keep": [
+        "wp.getUsersBlogs"
+      ]
+    },
+    {
+      "id": "xmlrpc-wp-getusers",
+      "description": "XML-RPC wp.getUsers(blog_id, user, password)",
+      "severity": "critical",
+      "request": "POST /xmlrpc.php HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: text/xml\n\n<methodCall><methodName>wp.getUsers</methodName><params><param><value><int>1</int></value></param><param><value><string>editor01</string></value></param><param><value><string>wppass123</string></value></param></params></methodCall>",
+      "must_hide": [
+        "wppass123",
+        "editor01"
+      ],
+      "must_keep": [
+        "<int>1</int>"
+      ]
+    },
+    {
+      "id": "xmlrpc-multicall",
+      "description": "XML-RPC system.multicall (brute force amplificato)",
+      "severity": "critical",
+      "request": "POST /xmlrpc.php HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: text/xml\n\n<methodCall><methodName>system.multicall</methodName><params><param><value><array><data><value><struct><member><name>methodName</name><value><string>wp.getUsersBlogs</string></value></member><member><name>params</name><value><array><data><value><string>admin</string></value><value><string>pass1</string></value></data></array></value></member></struct></value><value><struct><member><name>methodName</name><value><string>wp.getUsersBlogs</string></value></member><member><name>params</name><value><array><data><value><string>admin</string></value><value><string>pass2</string></value></data></array></value></member></struct></value></data></array></value></param></params></methodCall>",
+      "must_hide": [
+        "pass1",
+        "pass2"
+      ],
+      "must_keep": [
+        "system.multicall"
+      ]
+    },
+    {
+      "id": "xmlrpc-struct",
+      "description": "XML-RPC: membri di struct per nome",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/xml\n\n<methodResponse><params><param><value><struct><member><name>email</name><value><string>l.verdi@acme-corp.it</string></value></member><member><name>password</name><value><string>Struct!Pwd1</string></value></member></struct></value></param></params></methodResponse>",
+      "must_hide": [
+        "Struct!Pwd1",
+        "l.verdi@acme-corp.it"
+      ],
+      "must_keep": [
+        "<name>password</name>"
+      ]
+    },
+    {
+      "id": "soap-wssecurity",
+      "description": "SOAP con WS-Security UsernameToken",
+      "severity": "critical",
+      "request": "POST /ws HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: text/xml\n\n<soap:Envelope><soap:Header><wsse:UsernameToken><wsse:Username>svc</wsse:Username><wsse:Password>W5Sec!pwd</wsse:Password></wsse:UsernameToken></soap:Header></soap:Envelope>",
+      "must_hide": [
+        "W5Sec!pwd"
+      ],
+      "must_keep": [
+        "wsse:UsernameToken"
+      ]
+    },
+    {
+      "id": "odata-filter",
+      "description": "OData $filter con email",
+      "severity": "high",
+      "request": "GET /odata/Users?$filter=Email%20eq%20'm.rossi%40acme-corp.it' HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "must_hide": [
+        "m.rossi"
+      ],
+      "must_keep": [
+        "$filter="
+      ]
+    },
+    {
+      "id": "sse",
+      "description": "Server-Sent Events",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/event-stream\n\nevent: msg\ndata: {\"email\":\"m.rossi@acme-corp.it\",\"token\":\"sse_tok_9f8e7d6c5b4a\"}\n\n",
+      "must_hide": [
+        "m.rossi",
+        "sse_tok_9f8e7d6c5b4a"
+      ],
+      "must_keep": [
+        "event: msg"
+      ]
+    },
+    {
+      "id": "jsonp",
+      "description": "JSONP",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: application/javascript\n\ncb({\"email\":\"m.rossi@acme-corp.it\",\"token\":\"tok_9f8e7d6c5b4a3210\"});",
+      "must_hide": [
+        "m.rossi",
+        "tok_9f8e7d6c5b4a3210"
+      ],
+      "must_keep": [
+        "cb("
+      ]
+    },
+    {
+      "id": "js-initial-state",
+      "description": "Stato iniziale serializzato in una pagina (SPA)",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/html\n\n<script>window.__INITIAL_STATE__={\"user\":{\"email\":\"m.rossi@acme-corp.it\",\"apiKey\":\"k_live_9f8e7d6c5b4a\"}};</script>",
+      "must_hide": [
+        "m.rossi",
+        "k_live_9f8e7d6c5b4a"
+      ],
+      "must_keep": [
+        "__INITIAL_STATE__"
+      ]
+    },
+    {
+      "id": "vcard",
+      "description": "vCard (CardDAV, export contatti)",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\r\nHost: app.acme-corp.it\r\n\r\n",
+      "response": "HTTP/1.1 200 OK\r\nContent-Type: text/vcard\r\n\r\nBEGIN:VCARD\r\nVERSION:3.0\r\nFN:Mario Rossi\r\nN:Rossi;Mario;;;\r\nEMAIL;TYPE=WORK:m.rossi@acme-corp.it\r\nTEL;TYPE=CELL:+39 347 123 4567\r\nADR:;;Via Roma 12;Milano;;20121;IT\r\nEND:VCARD\r\n",
+      "must_hide": [
+        "Mario Rossi",
+        "Rossi;Mario",
+        "Via Roma 12",
+        "347 123 4567",
+        "m.rossi@acme-corp.it"
+      ],
+      "must_keep": [
+        "BEGIN:VCARD",
+        "VERSION:3.0"
+      ]
+    },
+    {
+      "id": "icalendar",
+      "description": "iCalendar (CalDAV, inviti)",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\r\nHost: app.acme-corp.it\r\n\r\n",
+      "response": "HTTP/1.1 200 OK\r\nContent-Type: text/calendar\r\n\r\nBEGIN:VCALENDAR\r\nBEGIN:VEVENT\r\nSUMMARY:Colloquio con Giulia Bianchi\r\nORGANIZER;CN=Mario Rossi:mailto:m.rossi@acme-corp.it\r\nATTENDEE;CN=Giulia Bianchi:mailto:g.bianchi@acme-corp.it\r\nLOCATION:Via Roma 12, Milano\r\nEND:VEVENT\r\nEND:VCALENDAR\r\n",
+      "must_hide": [
+        "Mario Rossi",
+        "Giulia Bianchi",
+        "m.rossi",
+        "Via Roma 12"
+      ],
+      "must_keep": [
+        "BEGIN:VEVENT",
+        "ORGANIZER;CN="
+      ]
+    },
+    {
+      "id": "webdav-nextcloud",
+      "description": "WebDAV di Nextcloud: utente nel percorso",
+      "severity": "high",
+      "request": "PROPFIND /remote.php/dav/files/mrossi/Documents/ HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: application/xml\n\n<d:multistatus xmlns:d=\"DAV:\"><d:response><d:href>/remote.php/dav/files/mrossi/Documents/paghe.xlsx</d:href><d:propstat><d:prop><d:owner>m.rossi@acme-corp.it</d:owner></d:prop></d:propstat></d:response></d:multistatus>",
+      "must_hide": [
+        "files/mrossi",
+        "m.rossi@acme-corp.it"
+      ],
+      "must_keep": [
+        "/remote.php/dav/files/"
+      ]
+    },
+    {
+      "id": "ldif",
+      "description": "Export LDIF con hash delle password",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\ndn: cn=Mario Rossi,ou=People,dc=acmecorp,dc=it\nmail: m.rossi@acme-corp.it\nuserPassword: {SSHA}abcdefghijklmnopqrstuvwxyz012345\n",
+      "must_hide": [
+        "Mario Rossi",
+        "{SSHA}abcdefghijklmnopqrstuvwxyz012345",
+        "m.rossi@acme-corp.it"
+      ],
+      "must_keep": [
+        "dn: cn="
+      ]
+    },
+    {
+      "id": "prometheus",
+      "description": "Metriche Prometheus con IP interni",
+      "severity": "medium",
+      "request": "GET /metrics HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nhttp_requests_total{instance=\"10.0.3.4:8080\"} 12\n",
+      "must_hide": [
+        "10.0.3.4"
+      ],
+      "must_keep": [
+        "http_requests_total"
+      ]
+    },
+    {
+      "id": "grpc",
+      "description": "gRPC (protobuf in frame): decodificato, struttura leggibile",
+      "severity": "critical",
+      "request": "POST /acme.v1.UserService/Login HTTP/2\r\nHost: api.acme-corp.it\r\nContent-Type: application/grpc\r\n\r\n\u0000\u0000\u0000\u0000G\n\u0014m.rossi@acme-corp.it\u0012\u000bPb0Pwd!2024\u0018*\"\u0005admin*\u0019\n\bpassword\u0012\rS3cr3tMapV4l!",
+      "must_hide": [
+        "m.rossi",
+        "Pb0Pwd!2024",
+        "S3cr3tMapV4l!"
+      ],
+      "must_keep": [
+        "4: \"admin\"",
+        "1: \"password\"",
+        "3: 42"
+      ],
+      "exact_roundtrip": false
+    },
+    {
+      "id": "grpc-web-text",
+      "description": "gRPC-web-text (frame in base64)",
+      "severity": "critical",
+      "request": "POST /acme.v1.UserService/Login HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/grpc-web-text\n\nAAAAAEcKFG0ucm9zc2lAYWNtZS1jb3JwLml0EgtQYjBQd2QhMjAyNBgqIgVhZG1pbioZCghwYXNzd29yZBINUzNjcjN0TWFwVjRsIQ==",
+      "must_hide": [
+        "m.rossi",
+        "Pb0Pwd!2024"
+      ],
+      "must_keep": [
+        "4: \"admin\""
+      ],
+      "exact_roundtrip": false
+    },
+    {
+      "id": "grpc-web-trailer",
+      "description": "gRPC-web con trailer testuali",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\r\nContent-Type: application/grpc-web+proto\r\n\r\n\u0000\u0000\u0000\u0000\u0016\n\u0014m.rossi@acme-corp.it\u0000\u0000\u0000 grpc-status:0\r\ngrpc-message:OK\r\n",
+      "must_hide": [
+        "m.rossi"
+      ],
+      "must_keep": [
+        "grpc-status:0"
+      ],
+      "exact_roundtrip": false
+    },
+    {
+      "id": "protobuf",
+      "description": "application/x-protobuf",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\r\nContent-Type: application/x-protobuf\r\n\r\n\n\u0014m.rossi@acme-corp.it\u0012\u000bPb0Pwd!2024\u0018*\"\u0005admin*\u0019\n\bpassword\u0012\rS3cr3tMapV4l!",
+      "must_hide": [
+        "Pb0Pwd!2024"
+      ],
+      "must_keep": [
+        "3: 42"
+      ],
+      "exact_roundtrip": false
+    },
+    {
+      "id": "msgpack",
+      "description": "MessagePack: nomi dei campi, regole per chiave",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\r\nContent-Type: application/msgpack\r\n\r\n¥email´m.rossi@acme-corp.it¨password«Mp!Pwd2024x¤role¥admin",
+      "must_hide": [
+        "m.rossi",
+        "Mp!Pwd2024x"
+      ],
+      "must_keep": [
+        "\"role\":\"admin\""
+      ],
+      "exact_roundtrip": false
+    },
+    {
+      "id": "protobuf-non-valido",
+      "description": "Contenuto dichiarato protobuf ma non decodificabile: scansione generica",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: application/x-protobuf\n\nÿÿÿnot protobuf m.rossi@acme-corp.it",
+      "must_hide": [
+        "m.rossi@acme-corp.it"
+      ]
+    },
+    {
+      "id": "bson",
+      "description": "BSON",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\r\nContent-Type: application/bson\r\n\r\n*\u0000\u0000\u0000\u0002email\u0000\u0015\u0000\u0000\u0000m.rossi@acme-corp.it\u0000\u0002password\u0000\f\u0000\u0000\u0000BsonPwd!2024\u0000\u0000",
+      "must_hide": [
+        "BsonPwd!2024",
+        "m.rossi"
+      ]
+    },
+    {
+      "id": "amf",
+      "description": "AMF (Flex / BlazeDS)",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\r\nContent-Type: application/x-amf\r\n\r\n\u0000\u0003\u0000\u0000\u0000\u0001\u0000\u0004null\u0000\u0002/1\u0000\u0000\u00000\n\u0000\u0000\u0000\u0001\u0003\u0000\bpassword\u0002\u0000\fAmfPwd!2024x\u0000\u0000\t",
+      "must_hide": [
+        "AmfPwd!2024x"
+      ]
+    },
+    {
+      "id": "hessian",
+      "description": "Hessian (RPC Java)",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\r\nContent-Type: application/x-hessian\r\n\r\nMt\u0000\u0004UserS\u0000\bpasswordS\u0000\fHessPwd!2024z",
+      "must_hide": [
+        "HessPwd!2024"
+      ]
+    },
+    {
+      "id": "wcf-msbin1",
+      "description": "WCF binary XML (.NET, msbin1)",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\r\nContent-Type: application/soap+msbin1\r\n\r\nV\u0002\u000b\u0001s\u0004\u000b\u0001a\u0006Password\fWcfPwd!2024x\u0001",
+      "must_hide": [
+        "WcfPwd!2024x"
+      ]
+    },
+    {
+      "id": "thrift",
+      "description": "Thrift binario (valori senza nome: forma da segreto)",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\r\nContent-Type: application/x-thrift\r\n\r\n\u0001\u0000\u0001\u0000\u0000\u0000\u0005login\u0000\u0000\u0000\u0001\u000b\u0000\u0001\u0000\u0000\u0000\u0005admin\u000b\u0000\u0002\u0000\u0000\u0000\fThrPwd!2024x\u0000",
+      "must_hide": [
+        "ThrPwd!2024x"
+      ]
+    },
+    {
+      "id": "cbor",
+      "description": "CBOR (WebAuthn, IoT)",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\r\nContent-Type: application/cbor\r\n\r\n¢eemailtm.rossi@acme-corp.ithpasswordlCborPwd!2024",
+      "must_hide": [
+        "CborPwd!2024",
+        "m.rossi"
+      ]
+    },
+    {
+      "id": "heapdump-like",
+      "description": "Stringhe in un dump binario (actuator/heapdump)",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: application/octet-stream\n\n\u0000\u0001password=H3ap!Pwd2024\u0000jdbc:mysql://db-prod-01:3306/app\u0000",
+      "must_hide": [
+        "H3ap!Pwd2024"
+      ]
+    }
+  ]
+}

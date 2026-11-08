@@ -1,0 +1,226 @@
+{
+  "category": "Dati personali",
+  "description": "PII di dipendenti e clienti finali (GDPR).",
+  "cases": [
+    {
+      "id": "pii-username-path",
+      "description": "Username nel path",
+      "severity": "high",
+      "request": "GET /users/mario.rossi/profile HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "must_hide": [
+        "mario.rossi"
+      ],
+      "must_keep": [
+        "/profile"
+      ]
+    },
+    {
+      "id": "pii-tilde-path",
+      "description": "Home web /~utente",
+      "severity": "high",
+      "request": "GET /~mrossi/cv.pdf HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "must_hide": [
+        "mrossi"
+      ]
+    },
+    {
+      "id": "pii-route-me",
+      "description": "/users/me e /users/search sono route, non utenti",
+      "severity": "low",
+      "request": "GET /users/me HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: application/json\n\n{\"next\":\"/users/search?q=x\"}",
+      "must_hide": [],
+      "must_keep": [
+        "/users/me",
+        "/users/search"
+      ]
+    },
+    {
+      "id": "pii-user-id-numerico",
+      "description": "ID numerico nel path: resta leggibile",
+      "severity": "low",
+      "request": "GET /users/12345/orders HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "must_hide": [],
+      "must_keep": [
+        "/users/12345"
+      ]
+    },
+    {
+      "id": "pii-saluto",
+      "description": "Nome dopo un saluto",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nGentile Mario Rossi, il tuo ordine e' pronto",
+      "must_hide": [
+        "Mario Rossi"
+      ],
+      "must_keep": [
+        "il tuo ordine"
+      ]
+    },
+    {
+      "id": "pii-saluto-inglese",
+      "description": "Nome dopo un saluto in inglese",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nDear John Smith, your invoice is attached",
+      "must_hide": [
+        "John Smith"
+      ]
+    },
+    {
+      "id": "pii-saluto-generico",
+      "description": "'Gentile Cliente' non e' un nome",
+      "severity": "low",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nGentile Cliente, grazie",
+      "must_hide": [],
+      "must_keep": [
+        "Gentile Cliente"
+      ]
+    },
+    {
+      "id": "pii-nome-propagato",
+      "description": "Nome trovato in un campo e ripetuto nel testo",
+      "severity": "high",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"name\":\"Giulia Bianchi\"}",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nOrdine intestato a Giulia Bianchi",
+      "must_hide": [
+        "Giulia Bianchi"
+      ]
+    },
+    {
+      "id": "pii-nome-solo-testo",
+      "description": "Nome nel testo senza contesto",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nPratica assegnata a Luca Verdi ieri",
+      "must_hide": [
+        "Luca Verdi"
+      ],
+      "known_gap": "Senza un campo strutturato o un saluto serve un riconoscimento di entita' (NER): si copre con Ctrl+Shift+A o con i termini del cliente"
+    },
+    {
+      "id": "pii-telefono-fisso",
+      "description": "Telefono fisso italiano",
+      "severity": "medium",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"note\":\"chiamare 02 1234567\"}",
+      "must_hide": [
+        "1234567"
+      ]
+    },
+    {
+      "id": "pii-telefono-mobile",
+      "description": "Cellulare con prefisso",
+      "severity": "medium",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"tel\":\"+39 347 123 4567\"}",
+      "must_hide": [
+        "347 123 4567"
+      ]
+    },
+    {
+      "id": "pii-targa",
+      "description": "Targa sotto la sua chiave",
+      "severity": "medium",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"targa\":\"AB123CD\"}",
+      "must_hide": [
+        "AB123CD"
+      ]
+    },
+    {
+      "id": "pii-cf-minuscolo",
+      "description": "Codice fiscale in minuscolo",
+      "severity": "high",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"x\":\"rssmra85t10a562s\"}",
+      "must_hide": [
+        "rssmra85t10a562s"
+      ]
+    },
+    {
+      "id": "pii-carta-spazi",
+      "description": "Carta di credito con spazi",
+      "severity": "critical",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"note\":\"pagato con 4111 1111 1111 1111\"}",
+      "must_hide": [
+        "4111 1111 1111 1111"
+      ]
+    },
+    {
+      "id": "pii-iban",
+      "description": "IBAN",
+      "severity": "high",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"x\":\"IT60X0542811101000000123456\"}",
+      "must_hide": [
+        "IT60X0542811101000000123456"
+      ]
+    },
+    {
+      "id": "pii-iban-spaziato",
+      "description": "IBAN a gruppi",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nBonifico su IT60 X054 2811 1010 0000 0123 456 entro venerdi",
+      "must_hide": [
+        "IT60 X054 2811 1010 0000 0123 456"
+      ]
+    },
+    {
+      "id": "pii-data-nascita",
+      "description": "Data di nascita",
+      "severity": "medium",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"birth_date\":\"1985-03-14\"}",
+      "must_hide": [
+        "1985-03-14"
+      ]
+    },
+    {
+      "id": "pii-indirizzo",
+      "description": "Indirizzo di casa",
+      "severity": "medium",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"address\":\"Via Roma 12, 20121 Milano\"}",
+      "must_hide": [
+        "Via Roma 12"
+      ]
+    },
+    {
+      "id": "pii-email-in-path",
+      "description": "Email nel path",
+      "severity": "high",
+      "request": "GET /users/mario.rossi@acme-corp.it HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "must_hide": [
+        "mario.rossi@acme-corp.it"
+      ]
+    },
+    {
+      "id": "pii-errore-sql",
+      "description": "Dati in un errore SQL",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nORA-00001: unique constraint violated: INSERT INTO UTENTI VALUES ('m.rossi@acme-corp.it','Mario')",
+      "must_hide": [
+        "m.rossi@acme-corp.it"
+      ],
+      "must_keep": [
+        "ORA-00001"
+      ]
+    },
+    {
+      "id": "pii-account-name",
+      "description": "accountName",
+      "severity": "high",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"accountName\":\"gbianchi85\"}",
+      "must_hide": [
+        "gbianchi85"
+      ]
+    },
+    {
+      "id": "pii-upn",
+      "description": "userPrincipalName di Active Directory",
+      "severity": "high",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"userPrincipalName\":\"g.bianchi\"}",
+      "must_hide": [
+        "g.bianchi"
+      ]
+    }
+  ]
+}

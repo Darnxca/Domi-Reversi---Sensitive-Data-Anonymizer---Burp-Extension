@@ -1,0 +1,232 @@
+{
+  "category": "Identita' del cliente",
+  "description": "Tutto cio' che permette di capire CHI e' il cliente: il leak piu' grave per un NDA.",
+  "cases": [
+    {
+      "id": "org-nel-path",
+      "description": "Nome del cliente in un segmento di path",
+      "severity": "critical",
+      "request": "GET /acme-corp/reports/2024 HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "must_hide": [
+        "acme-corp"
+      ],
+      "must_keep": [
+        "/reports/2024"
+      ]
+    },
+    {
+      "id": "org-header-custom",
+      "description": "Header custom con il tenant",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\nX-Tenant: acme-corp\n\n",
+      "must_hide": [
+        "acme-corp"
+      ]
+    },
+    {
+      "id": "org-header-tenant-host-diverso",
+      "description": "X-Tenant anche quando l'host non e' del cliente (chiave 'tenant')",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: api.saas-vendor.example\nX-Tenant: acme-corp\n\n",
+      "must_hide": [
+        "acme-corp"
+      ]
+    },
+    {
+      "id": "org-package-java",
+      "description": "Package Java del cliente in uno stack trace",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 500 Internal Server Error\nContent-Type: text/plain\n\nat it.acmecorp.payroll.PayService.calc(PayService.java:42)",
+      "must_hide": [
+        "acmecorp"
+      ],
+      "must_keep": [
+        "PayService.java:42"
+      ]
+    },
+    {
+      "id": "org-testo-libero",
+      "description": "Ragione sociale nel testo libero",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nCopyright 2024 Acme Corp S.p.A. - tutti i diritti riservati",
+      "must_hide": [
+        "Acme Corp"
+      ]
+    },
+    {
+      "id": "org-maiuscolo",
+      "description": "Nome del cliente in maiuscolo in un banner",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/html\n\n<title>ACME-CORP Portale</title>",
+      "must_hide": [
+        "ACME-CORP"
+      ]
+    },
+    {
+      "id": "org-underscore",
+      "description": "Nome del cliente con underscore dentro un valore ('acme_corp_exports')",
+      "severity": "critical",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"bucket\":\"acme_corp_exports\"}",
+      "must_hide": [
+        "acme_corp"
+      ]
+    },
+    {
+      "id": "org-bucket-s3",
+      "description": "Bucket S3 col nome del cliente",
+      "severity": "critical",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"u\":\"https://acme-prod-backups.s3.eu-west-1.amazonaws.com/db.sql\"}",
+      "must_hide": [
+        "acme-prod-backups"
+      ]
+    },
+    {
+      "id": "org-csp",
+      "description": "Domini del cliente in Content-Security-Policy",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\nContent-Security-Policy: default-src 'self' https://cdn.acme-corp.it https://api.acme-corp.it\n\n",
+      "must_hide": [
+        "acme-corp"
+      ],
+      "must_keep": [
+        "default-src 'self'"
+      ]
+    },
+    {
+      "id": "org-cors",
+      "description": "Access-Control-Allow-Origin del cliente",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\nAccess-Control-Allow-Origin: https://portal.acme-corp.it\n\n",
+      "must_hide": [
+        "acme-corp"
+      ]
+    },
+    {
+      "id": "org-location",
+      "description": "Redirect verso il dominio SSO del cliente",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 302 Found\nContent-Type: text/plain\nLocation: https://sso.acme-corp.it/login?next=%2Fhr\n\n",
+      "must_hide": [
+        "acme-corp"
+      ]
+    },
+    {
+      "id": "org-set-cookie-domain",
+      "description": "Domain= in Set-Cookie",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\nSet-Cookie: lang=it; Domain=.acme-corp.it; Path=/\n\n",
+      "must_hide": [
+        "acme-corp"
+      ],
+      "must_keep": [
+        "Path=/"
+      ]
+    },
+    {
+      "id": "org-email-dominio",
+      "description": "Dominio del cliente come parte di un'email",
+      "severity": "critical",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"to\":\"m.rossi@acme-corp.it\"}",
+      "must_hide": [
+        "acme-corp",
+        "m.rossi"
+      ]
+    },
+    {
+      "id": "org-termine-utente",
+      "description": "Nome cliente corto (non ricavabile dal dominio) fornito dall'utente",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: www.e-distribuzione.example\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nIl contratto Enel e' attivo",
+      "org_terms": [
+        "Enel"
+      ],
+      "must_hide": [
+        "Enel"
+      ],
+      "must_keep": [
+        "contratto"
+      ]
+    },
+    {
+      "id": "org-nome-progetto",
+      "description": "Nome in codice del progetto fornito dall'utente",
+      "severity": "critical",
+      "request": "GET /phoenix/api HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nProject Phoenix build 42",
+      "org_terms": [
+        "Phoenix"
+      ],
+      "must_hide": [
+        "Phoenix",
+        "phoenix"
+      ]
+    },
+    {
+      "id": "org-dominio-co-uk",
+      "description": "Suffisso pubblico a due livelli",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: shop.acmeretail.co.uk\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nWelcome to acmeretail online",
+      "must_hide": [
+        "acmeretail"
+      ]
+    },
+    {
+      "id": "org-dominio-corto",
+      "description": "Nome di dominio corto e comune: non ricavato in automatico",
+      "severity": "low",
+      "request": "GET / HTTP/1.1\nHost: www.data.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: application/json\n\n{\"data\":[1,2]}",
+      "must_hide": [],
+      "must_keep": [
+        "data"
+      ]
+    },
+    {
+      "id": "org-javascript-config",
+      "description": "Configurazione JS con il nome del cliente",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: application/javascript\n\nwindow.APP_CONFIG = { tenant: \"acme-corp\", theme: \"dark\" };",
+      "must_hide": [
+        "acme-corp"
+      ]
+    },
+    {
+      "id": "org-metadati-html",
+      "description": "meta og:site_name del cliente",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/html\n\n<meta property=\"og:site_name\" content=\"Acme Corp\">",
+      "must_hide": [
+        "Acme Corp"
+      ]
+    },
+    {
+      "id": "org-cookie-name",
+      "description": "Nome del cookie col prefisso del cliente ('acmecorp_sid')",
+      "severity": "medium",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\nCookie: acmecorp_sid=k8J2mQ9xLp4Z\n\n",
+      "must_hide": [
+        "acmecorp"
+      ]
+    },
+    {
+      "id": "org-prefisso-underscore",
+      "description": "Nome del cliente dopo un underscore: la parola intera diventa ORG_n_W (stessa radice, reversibile)",
+      "severity": "critical",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"schema\":\"db_acmecorp\"}",
+      "must_hide": [
+        "acmecorp"
+      ]
+    }
+  ]
+}

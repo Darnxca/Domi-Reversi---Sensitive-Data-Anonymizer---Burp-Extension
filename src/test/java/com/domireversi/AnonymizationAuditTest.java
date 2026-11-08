@@ -316,9 +316,11 @@ class AnonymizationAuditTest {
                 {"Set-Cookie", "Set-Cookie: sid=NEWSESS99887766; Path=/; HttpOnly", "NEWSESS99887766"},
                 {"Set-Cookie Domain", "Set-Cookie: a=1; Domain=.clientecorp.it", "clientecorp.it"},
                 {"Location", "Location: https://sso.clientecorp.it/login", "sso.clientecorp.it"},
-                {"Server", "Server: Apache/2.4.41 (Ubuntu)", "2.4.41"},
-                {"X-Powered-By", "X-Powered-By: PHP/7.4.3", "7.4.3"},
-                {"X-AspNet-Version", "X-AspNet-Version: 4.0.30319", "4.0.30319"},
+                // banner: la versione resta leggibile (serve per le CVE), ma host e IP
+                // interni al loro interno no
+                {"Server", "Server: Apache/2.4.41 (Ubuntu) web-03.clientecorp.it", "web-03.clientecorp.it"},
+                {"Via", "Via: 1.1 proxy-01.clientecorp.it (squid/4.10)", "proxy-01.clientecorp.it"},
+                {"X-Backend-Server", "X-Backend-Server: 10.20.3.4", "10.20.3.4"},
                 {"WWW-Authenticate", "WWW-Authenticate: Basic realm=\"intranet.clientecorp.it\"", "intranet.clientecorp.it"},
                 {"Access-Control-Allow-Origin", "Access-Control-Allow-Origin: https://portal.clientecorp.it", "portal.clientecorp.it"},
                 {"Content-Security-Policy", "Content-Security-Policy: default-src 'self' https://cdn.clientecorp.it", "cdn.clientecorp.it"},
@@ -569,9 +571,12 @@ class AnonymizationAuditTest {
                 Anonymizer an = fresh();
                 String a = run(an, req("text/plain", "uno " + s[1] + " fine"));
                 String b = run(an, resp("application/json", "{\"note\":\"" + s[1] + "\"}"));
-                long n = an.getMap().entries().stream().filter(e -> e.original.equalsIgnoreCase(s[1])).count();
+                // il JWT si mappa senza l'header, che resta leggibile: conta la parte nascosta
+                long n = an.getMap().entries().stream().filter(e -> e.original.equalsIgnoreCase(s[1])
+                        || (s[0].equals("JWT") && s[1].endsWith("." + e.original))).count();
                 assertEquals(1, n, "valore mappato " + n + " volte");
-                String ph = an.getMap().entries().stream().filter(e -> e.original.equalsIgnoreCase(s[1])).findFirst().get().placeholder;
+                String ph = an.getMap().entries().stream().filter(e -> e.original.equalsIgnoreCase(s[1])
+                        || (s[0].equals("JWT") && s[1].endsWith("." + e.original))).findFirst().get().placeholder;
                 assertTrue(a.contains(ph) && b.contains(ph), "segnaposto diversi tra richiesta e risposta");
             }));
         }

@@ -1,0 +1,306 @@
+{
+  "category": "Idee da rizzo-pii",
+  "description": "Casi ripresi dai rilevatori e dai test di rizzo-pii (Rizzo AI Academy), adattati al traffico HTTP: checksum, formati di stampa, confini, normalizzazione, codifiche, tabelle.",
+  "cases": [
+    {
+      "id": "rz-cf-omocodico",
+      "description": "CF omocodico (cifre sostituite da lettere)",
+      "severity": "high",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"x\":\"RSSMRA80A01H50MV\"}",
+      "must_hide": [
+        "RSSMRA80A01H50MV"
+      ]
+    },
+    {
+      "id": "rz-cf-testo",
+      "description": "CF nel testo libero",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nRicorrente: Mario Rossi, C.F. RSSMRA80A01H501U, residente",
+      "must_hide": [
+        "RSSMRA80A01H501U"
+      ]
+    },
+    {
+      "id": "rz-iban-stampa",
+      "description": "IBAN a gruppi seguito da una parola",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nIBAN IT60 X054 2811 1010 0000 0123 456 entro venerdi",
+      "must_hide": [
+        "IT60 X054 2811 1010 0000 0123 456"
+      ],
+      "must_keep": [
+        "entro"
+      ]
+    },
+    {
+      "id": "rz-iban-stampa-de",
+      "description": "IBAN tedesco a gruppi (lunghezza diversa)",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nKonto DE89 3704 0044 0532 0130 00 grazie",
+      "must_hide": [
+        "DE89 3704 0044 0532 0130 00"
+      ],
+      "must_keep": [
+        "grazie"
+      ]
+    },
+    {
+      "id": "rz-iban-a-capo",
+      "description": "IBAN che va a capo una volta",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nIBAN IT60 X054 2811 1010\n0000 0123 456 fine",
+      "must_hide": [
+        "X054 2811 1010",
+        "0000 0123 456"
+      ]
+    },
+    {
+      "id": "rz-iban-trattini",
+      "description": "IBAN con trattini",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\niban: IT60-X054-2811-1010-0000-0123-456",
+      "must_hide": [
+        "IT60-X054-2811-1010-0000-0123-456"
+      ]
+    },
+    {
+      "id": "rz-carta-punti",
+      "description": "Carta con i punti come separatore",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\ncarta 4111.1111.1111.1111 ok",
+      "must_hide": [
+        "4111.1111.1111.1111"
+      ]
+    },
+    {
+      "id": "rz-carta-scadenza",
+      "description": "Carta con la scadenza attaccata",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\npagato con 4111 1111 1111 1111 12/26 grazie",
+      "must_hide": [
+        "4111 1111 1111 1111"
+      ],
+      "must_keep": [
+        "12/26"
+      ]
+    },
+    {
+      "id": "rz-carta-17",
+      "description": "PAN di 19 cifre: non tagliato a meta'",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\npan 6011 0009 9013 9424",
+      "must_hide": [
+        "6011000990139424"
+      ]
+    },
+    {
+      "id": "rz-telefono-trattini",
+      "description": "Cellulare con trattini",
+      "severity": "medium",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nchiamami al 333-123-4567",
+      "must_hide": [
+        "333-123-4567"
+      ]
+    },
+    {
+      "id": "rz-telefono-fisso-trattino",
+      "description": "Fisso con trattino",
+      "severity": "medium",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nufficio 010-2471234",
+      "must_hide": [
+        "010-2471234"
+      ]
+    },
+    {
+      "id": "rz-targa-testo",
+      "description": "Targa nel testo libero",
+      "severity": "medium",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nveicolo targato AB 123 CD fermo",
+      "must_hide": [
+        "AB 123 CD"
+      ]
+    },
+    {
+      "id": "rz-targa-trattini",
+      "description": "Targa con trattini in un export",
+      "severity": "medium",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\ntarga: FG-456-HL",
+      "must_hide": [
+        "FG-456-HL"
+      ]
+    },
+    {
+      "id": "rz-targa-falso-positivo",
+      "description": "Codice con lettere ambigue: non e' una targa",
+      "severity": "low",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\ncodice IO123QU",
+      "must_hide": [],
+      "must_keep": [
+        "IO123QU"
+      ]
+    },
+    {
+      "id": "rz-ip-versione",
+      "description": "Versione software a 4 numeri con ottetto > 255: non e' un IP",
+      "severity": "low",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nversione 2.3.55.987",
+      "must_hide": [],
+      "must_keep": [
+        "2.3.55.987"
+      ]
+    },
+    {
+      "id": "rz-ip-range",
+      "description": "Range di IP interni",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nDHCP 192.168.1.1-192.168.1.20",
+      "must_hide": [
+        "192.168.1.1",
+        "192.168.1.20"
+      ]
+    },
+    {
+      "id": "rz-url-punto-finale",
+      "description": "URL a fine frase: il punto resta fuori",
+      "severity": "low",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nvedi https://intranet.acme-corp.it/la pagina.",
+      "must_hide": [],
+      "must_keep": [
+        "la pagina.",
+        "pagina."
+      ]
+    },
+    {
+      "id": "rz-docid-prot",
+      "description": "Numero di protocollo (PA)",
+      "severity": "medium",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nRif. Prot. n. 456/2024 del ufficio",
+      "must_hide": [
+        "456/2024"
+      ],
+      "must_keep": [
+        "Prot. n."
+      ]
+    },
+    {
+      "id": "rz-docid-rg",
+      "description": "Numero di ruolo generale",
+      "severity": "medium",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\ncausa R.G. 1234/2024 assegnata",
+      "must_hide": [
+        "1234/2024"
+      ]
+    },
+    {
+      "id": "rz-data-nascita-testo",
+      "description": "Data di nascita nel testo",
+      "severity": "medium",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nnato il 14/03/1985 a Roma",
+      "must_hide": [
+        "14/03/1985"
+      ]
+    },
+    {
+      "id": "rz-data-generica",
+      "description": "Data qualunque: resta leggibile",
+      "severity": "low",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nverbale del 15/03/2026",
+      "must_hide": [],
+      "must_keep": [
+        "15/03/2026"
+      ]
+    },
+    {
+      "id": "rz-nome-normalizzato",
+      "description": "Stesso nome scritto in modi diversi: stessa persona",
+      "severity": "high",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"name\":\"Mario Rossi\"}",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nGentile MARIO ROSSI, rif. mario  rossi",
+      "must_hide": [
+        "Mario Rossi",
+        "MARIO ROSSI",
+        "mario  rossi"
+      ]
+    },
+    {
+      "id": "rz-piva-nuda",
+      "description": "Partita IVA senza contesto (checksum valido)",
+      "severity": "medium",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nfornitore 12345678903 attivo",
+      "must_hide": [
+        "12345678903"
+      ]
+    },
+    {
+      "id": "rz-piva-falso-positivo",
+      "description": "11 cifre con checksum errato: non e' una P.IVA",
+      "severity": "low",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nordine 12345678901",
+      "must_hide": [],
+      "must_keep": [
+        "12345678901"
+      ]
+    },
+    {
+      "id": "rz-utf16-body",
+      "description": "Body UTF-16 senza BOM: la PII non deve sfuggire",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: application/json; charset=utf-16le\n\n{\u0000\"\u0000e\u0000m\u0000a\u0000i\u0000l\u0000\"\u0000:\u0000\"\u0000m\u0000a\u0000r\u0000i\u0000o\u0000.\u0000r\u0000o\u0000s\u0000s\u0000i\u0000@\u0000a\u0000c\u0000m\u0000e\u0000-\u0000c\u0000o\u0000r\u0000p\u0000.\u0000i\u0000t\u0000\"\u0000,\u0000\"\u0000c\u0000f\u0000\"\u0000:\u0000\"\u0000R\u0000S\u0000S\u0000M\u0000R\u0000A\u00008\u00000\u0000A\u00000\u00001\u0000H\u00005\u00000\u00001\u0000U\u0000\"\u0000}\u0000",
+      "must_hide": [
+        "m\u0000a\u0000r\u0000i\u0000o\u0000.\u0000r\u0000o\u0000s\u0000s\u0000i\u0000@\u0000a\u0000c\u0000m\u0000e\u0000-\u0000c\u0000o\u0000r\u0000p\u0000.\u0000i\u0000t\u0000",
+        "R\u0000S\u0000S\u0000M\u0000R\u0000A\u00008\u00000\u0000A\u00000\u00001\u0000H\u00005\u00000\u00001\u0000U\u0000"
+      ]
+    },
+    {
+      "id": "rz-csv-colonne",
+      "description": "Export CSV: colonne sensibili per intestazione",
+      "severity": "critical",
+      "request": "GET /export.csv HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/csv\n\nnome,cognome,indirizzo,stato\nGiulia,Bianchi,Via Roma 12,attivo\n",
+      "must_hide": [
+        "Bianchi",
+        "Giulia",
+        "Via Roma 12"
+      ],
+      "must_keep": [
+        "nome,cognome,indirizzo,stato"
+      ]
+    },
+    {
+      "id": "rz-tsv-colonne",
+      "description": "Export TSV",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/tab-separated-values\n\nfirst_name\tlast_name\tstatus\nGiulia\tBianchi\tattivo\n",
+      "must_hide": [
+        "Bianchi"
+      ],
+      "must_keep": [
+        "attivo"
+      ]
+    }
+  ]
+}

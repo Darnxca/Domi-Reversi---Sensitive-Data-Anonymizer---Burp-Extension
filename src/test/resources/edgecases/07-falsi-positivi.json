@@ -1,0 +1,163 @@
+{
+  "category": "Falsi positivi",
+  "description": "Cio' che NON va toccato: se sparisce, i consigli dell'LLM diventano inutili.",
+  "cases": [
+    {
+      "id": "fp-versioni",
+      "description": "Versioni di librerie",
+      "severity": "low",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/html\n\n<script src=\"/js/jquery-3.6.0.min.js\"></script> v1.2.3",
+      "must_hide": [],
+      "must_keep": [
+        "jquery-3.6.0.min.js",
+        "1.2.3"
+      ]
+    },
+    {
+      "id": "fp-date-timestamp",
+      "description": "Date e timestamp",
+      "severity": "low",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"created\":\"2024-05-17T10:22:33Z\",\"ts\":1715941353}",
+      "must_hide": [],
+      "must_keep": [
+        "2024-05-17T10:22:33Z",
+        "1715941353"
+      ]
+    },
+    {
+      "id": "fp-colori-css",
+      "description": "Colori esadecimali CSS",
+      "severity": "low",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/css\n\na{color:#ff8800;background:#123456}",
+      "must_hide": [],
+      "must_keep": [
+        "#ff8800",
+        "#123456"
+      ]
+    },
+    {
+      "id": "fp-namespace-xml",
+      "description": "Namespace XML pubblici",
+      "severity": "low",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/xml\n\n<a xmlns:xs=\"http://www.w3.org/2001/XMLSchema\"/>",
+      "must_hide": [],
+      "must_keep": [
+        "http://www.w3.org/2001/XMLSchema"
+      ]
+    },
+    {
+      "id": "fp-codici-http",
+      "description": "Codici di stato e porte",
+      "severity": "low",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"status\":404,\"port\":8080}",
+      "must_hide": [],
+      "must_keep": [
+        "404",
+        "8080"
+      ]
+    },
+    {
+      "id": "fp-booleani-chiavi-sensibili",
+      "description": "Valori booleani sotto chiavi sensibili",
+      "severity": "low",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"password_required\":true,\"token\":null}",
+      "must_hide": [],
+      "must_keep": [
+        "\"password_required\":true",
+        "\"token\":null"
+      ]
+    },
+    {
+      "id": "fp-metadati-token",
+      "description": "Metadati di un token (scadenza, tipo)",
+      "severity": "low",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"token_type\":\"Bearer\",\"expires_in\":3600}",
+      "must_hide": [],
+      "must_keep": [
+        "\"token_type\":\"Bearer\"",
+        "\"expires_in\":3600"
+      ]
+    },
+    {
+      "id": "fp-sql-sintassi",
+      "description": "Sintassi di un payload SQLi: va preservata",
+      "severity": "low",
+      "request": "GET /item?id=1%27%20OR%201=1-- HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nsyntax error near ' OR 1=1--",
+      "must_hide": [],
+      "must_keep": [
+        "' OR 1=1--"
+      ]
+    },
+    {
+      "id": "fp-payload-xss",
+      "description": "Payload XSS: va preservato",
+      "severity": "low",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/html\n\n<script>alert(1)</script>",
+      "must_hide": [],
+      "must_keep": [
+        "<script>alert(1)</script>"
+      ]
+    },
+    {
+      "id": "fp-trace-id",
+      "description": "Trace id (preserve_keys)",
+      "severity": "low",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\nX-Trace-Id: 4bf92f3577b34da6a3ce929d0e0e4736\n\n",
+      "must_hide": [],
+      "must_keep": [
+        "4bf92f3577b34da6a3ce929d0e0e4736"
+      ]
+    },
+    {
+      "id": "fp-content-type",
+      "description": "Header tecnici",
+      "severity": "low",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: application/json; charset=utf-8\nCache-Control: max-age=0\n\n{}",
+      "must_hide": [],
+      "must_keep": [
+        "application/json; charset=utf-8",
+        "max-age=0"
+      ]
+    },
+    {
+      "id": "fp-javascript-codice",
+      "description": "Riferimenti di codice JS che sembrano domini",
+      "severity": "low",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: application/javascript\n\nvar x = window.location.href; var n = user.name;",
+      "must_hide": [],
+      "must_keep": [
+        "window.location.href",
+        "user.name"
+      ]
+    },
+    {
+      "id": "fp-parola-comune-host-corto",
+      "description": "Parola comune uguale a un dominio corto",
+      "severity": "low",
+      "request": "GET / HTTP/1.1\nHost: www.poste.example\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nle poste sono chiuse",
+      "must_hide": [],
+      "must_keep": [
+        "poste"
+      ]
+    },
+    {
+      "id": "fp-stack-generico",
+      "description": "Stack trace di librerie pubbliche",
+      "severity": "low",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nat org.springframework.web.servlet.DispatcherServlet.doDispatch(DispatcherServlet.java:1067)",
+      "must_hide": [],
+      "must_keep": [
+        "org.springframework.web.servlet.DispatcherServlet"
+      ]
+    }
+  ]
+}

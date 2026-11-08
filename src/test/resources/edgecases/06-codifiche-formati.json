@@ -1,0 +1,176 @@
+{
+  "category": "Codifiche e formati",
+  "description": "Lo stesso dato in rappresentazioni diverse deve sparire comunque e tornare identico.",
+  "cases": [
+    {
+      "id": "enc-unicode-escape",
+      "description": "Email con \\u0040 in JSON",
+      "severity": "high",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"e\":\"mario.rossi\\u0040acme-corp.it\"}",
+      "must_hide": [
+        "mario.rossi"
+      ]
+    },
+    {
+      "id": "enc-doppio-url",
+      "description": "Email con doppio URL-encoding",
+      "severity": "high",
+      "request": "GET /?e=mario.rossi%2540acme-corp.it HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "must_hide": [
+        "mario.rossi"
+      ]
+    },
+    {
+      "id": "enc-entita-html",
+      "description": "Email con entita' HTML",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/html\n\nmario.rossi&#64;acme-corp.it",
+      "must_hide": [
+        "mario.rossi"
+      ]
+    },
+    {
+      "id": "enc-base64-pii",
+      "description": "Base64 che contiene un'email",
+      "severity": "high",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"blob\":\"bWFyaW8ucm9zc2lAYWNtZS1jb3JwLml0\"}",
+      "must_hide": [
+        "bWFyaW8ucm9zc2lAYWNtZS1jb3JwLml0"
+      ]
+    },
+    {
+      "id": "enc-punycode",
+      "description": "Dominio in punycode",
+      "severity": "medium",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nredirect to xn--acm-corp-l2a.it",
+      "must_hide": [
+        "xn--acm-corp-l2a"
+      ]
+    },
+    {
+      "id": "enc-json-in-stringa",
+      "description": "JSON annidato dentro una stringa JSON",
+      "severity": "high",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"payload\":\"{\\\"password\\\":\\\"Inn3rPwd!\\\"}\"}",
+      "must_hide": [
+        "Inn3rPwd!"
+      ]
+    },
+    {
+      "id": "enc-json-troncato",
+      "description": "JSON troncato",
+      "severity": "high",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"user\":\"x\",\"password\":\"Trunc4ted!\",\"items\":[1,2",
+      "must_hide": [
+        "Trunc4ted!"
+      ]
+    },
+    {
+      "id": "enc-ndjson",
+      "description": "NDJSON",
+      "severity": "high",
+      "request": "POST /bulk HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/x-ndjson\n\n{\"email\":\"a.b@acme-corp.it\"}\n{\"email\":\"c.d@acme-corp.it\"}\n",
+      "must_hide": [
+        "a.b@acme-corp.it",
+        "c.d@acme-corp.it"
+      ]
+    },
+    {
+      "id": "enc-multipart",
+      "description": "Multipart con campo password e file",
+      "severity": "critical",
+      "request": "POST /upload HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: multipart/form-data; boundary=XyZ\n\n--XyZ\nContent-Disposition: form-data; name=\"password\"\n\nMultiP4rt!\n--XyZ\nContent-Disposition: form-data; name=\"file\"; filename=\"a.txt\"\nContent-Type: text/plain\n\nciao\n--XyZ--\n",
+      "must_hide": [
+        "MultiP4rt!"
+      ],
+      "must_keep": [
+        "filename"
+      ]
+    },
+    {
+      "id": "enc-chunked",
+      "description": "Transfer-Encoding: chunked",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\nTransfer-Encoding: chunked\n\n1e\nchunk.user@acme-corp.it pronto\n0\n\n",
+      "must_hide": [
+        "chunk.user@acme-corp.it"
+      ]
+    },
+    {
+      "id": "enc-gzip-dichiarato",
+      "description": "Body binario gzip con un'email in chiaro",
+      "severity": "medium",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: application/json\nContent-Encoding: gzip\n\n\u001f\bbinarydata mario@acme.it",
+      "must_hide": [
+        "mario@acme.it"
+      ]
+    },
+    {
+      "id": "enc-unicode-nomi",
+      "description": "Nome con accenti dopo un saluto",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nGentile Niccolò Bàrberi, benvenuto",
+      "must_hide": [
+        "Niccolò Bàrberi"
+      ]
+    },
+    {
+      "id": "enc-crlf-misti",
+      "description": "Fine riga misti CRLF/LF",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\r\nHost: h.example\nCookie: session=k8J2mQ9xLp4Z\r\n\r\n",
+      "must_hide": [
+        "k8J2mQ9xLp4Z"
+      ],
+      "known_gap": "Con fine riga misti nello stesso messaggio il serializzatore usa un solo tipo di a-capo: il contenuto torna, i byte di fine riga no (Burp usa sempre CRLF)"
+    },
+    {
+      "id": "enc-header-duplicati",
+      "description": "Header duplicati",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\nX-Auth-Token: tok1AAAAbbbb2222\nX-Auth-Token: tok2CCCCdddd3333\n\n",
+      "must_hide": [
+        "tok1AAAAbbbb2222",
+        "tok2CCCCdddd3333"
+      ]
+    },
+    {
+      "id": "enc-http2-pseudo",
+      "description": "Pseudo-header HTTP/2",
+      "severity": "critical",
+      "request": "GET /x HTTP/2\n:authority: app.acme-corp.it\n:path: /x\n\n",
+      "must_hide": [
+        "acme-corp"
+      ]
+    },
+    {
+      "id": "enc-placeholder-letterale",
+      "description": "Testo che sembra gia' un segnaposto",
+      "severity": "medium",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"label\":\"EMAIL_1\",\"email\":\"m.rossi@acme-corp.it\"}",
+      "must_hide": [
+        "m.rossi@acme-corp.it"
+      ],
+      "must_keep": [
+        "EMAIL_1"
+      ]
+    },
+    {
+      "id": "enc-placeholder-markdown-letterale",
+      "description": "Letterale 'EMAIL\\_1' nel traffico",
+      "severity": "medium",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"label\":\"EMAIL\\\\_1\",\"email\":\"m.rossi@acme-corp.it\"}",
+      "must_hide": [
+        "m.rossi@acme-corp.it"
+      ],
+      "must_keep": [
+        "EMAIL\\\\_1"
+      ]
+    }
+  ]
+}

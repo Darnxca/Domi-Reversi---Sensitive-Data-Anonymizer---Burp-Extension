@@ -1,0 +1,89 @@
+{
+  "category": "Documenti, wallet e categorie particolari",
+  "description": "Ripreso dalle entita' di Presidio (wallet, documenti, posizione) e dalle categorie particolari del GDPR (salute).",
+  "cases": [
+    {
+      "id": "crypto-btc-bech32",
+      "description": "Wallet Bitcoin bech32",
+      "severity": "high",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"note\":\"paga a bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq\"}",
+      "must_hide": [
+        "bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq"
+      ]
+    },
+    {
+      "id": "crypto-eth",
+      "description": "Wallet Ethereum",
+      "severity": "high",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"note\":\"wallet 0x52908400098527886E0F7030069857D2E4169EE7\"}",
+      "must_hide": [
+        "0x52908400098527886E0F7030069857D2E4169EE7"
+      ]
+    },
+    {
+      "id": "doc-passaporto-chiave",
+      "description": "Numero di passaporto sotto la sua chiave",
+      "severity": "high",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"passport_number\":\"YA1234567\"}",
+      "must_hide": [
+        "YA1234567"
+      ]
+    },
+    {
+      "id": "doc-carta-identita",
+      "description": "Carta d'identita' elettronica sotto la sua chiave",
+      "severity": "high",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"numero_documento\":\"CA12345AB\"}",
+      "must_hide": [
+        "CA12345AB"
+      ]
+    },
+    {
+      "id": "doc-patente",
+      "description": "Patente sotto la sua chiave",
+      "severity": "high",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"driver_license\":\"U1A2B3C4D5\"}",
+      "must_hide": [
+        "U1A2B3C4D5"
+      ]
+    },
+    {
+      "id": "doc-nhs",
+      "description": "NHS number britannico sotto la sua chiave",
+      "severity": "high",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"nhs_number\":\"943 476 5919\"}",
+      "must_hide": [
+        "943 476 5919"
+      ]
+    },
+    {
+      "id": "doc-piva-contesto",
+      "description": "Partita IVA con contesto",
+      "severity": "medium",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nP.IVA 01234567890",
+      "must_hide": [
+        "01234567890"
+      ]
+    },
+    {
+      "id": "geo-coordinate-default",
+      "description": "Coordinate GPS: leggibili di default (scelta dell'autore, test di falso positivo). Per nasconderle aggiungi \"lat\": \"GEO\" ecc. in ~/.domi-reversi/sensitive_patterns.json",
+      "severity": "low",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"lat\":45.4642,\"lng\":9.1900}",
+      "must_hide": [],
+      "must_keep": [
+        "\"lat\":45.4642"
+      ]
+    },
+    {
+      "id": "salute-diagnosi",
+      "description": "Dato sanitario sotto una chiave esplicita",
+      "severity": "high",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"diagnosi\":\"diabete di tipo 2\"}",
+      "must_hide": [
+        "diabete di tipo 2"
+      ]
+    }
+  ]
+}

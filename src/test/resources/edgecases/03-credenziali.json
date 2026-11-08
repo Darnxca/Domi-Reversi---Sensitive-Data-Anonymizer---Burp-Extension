@@ -1,0 +1,300 @@
+{
+  "category": "Credenziali e segreti",
+  "description": "Password, token, chiavi: ovunque compaiano e in qualunque codifica.",
+  "cases": [
+    {
+      "id": "cred-url-userinfo",
+      "description": "Credenziali nell'URL",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nproxy=http://svc_backup:Backup!2024@proxy.acme-corp.it:3128",
+      "must_hide": [
+        "Backup!2024",
+        "svc_backup"
+      ]
+    },
+    {
+      "id": "cred-client-secret-form",
+      "description": "client_secret OAuth in form",
+      "severity": "critical",
+      "request": "POST /token HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/x-www-form-urlencoded\n\ngrant_type=client_credentials&client_id=acme-app&client_secret=Zx9!kL2pQ7wR",
+      "must_hide": [
+        "Zx9!kL2pQ7wR"
+      ],
+      "must_keep": [
+        "client_credentials"
+      ]
+    },
+    {
+      "id": "cred-saml",
+      "description": "SAMLResponse con email nel NameID",
+      "severity": "critical",
+      "request": "POST /acs HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/x-www-form-urlencoded\n\nSAMLResponse=PHNhbWw6TmFtZUlEPm0ucm9zc2lAYWNtZS1jb3JwLml0PC9zYW1sOk5hbWVJRD4=",
+      "must_hide": [
+        "PHNhbWw6TmFtZUlEPm0ucm9zc2lAYWNtZS1jb3JwLml0PC9zYW1sOk5hbWVJRD4="
+      ]
+    },
+    {
+      "id": "cred-dotenv",
+      "description": "File .env esposto",
+      "severity": "critical",
+      "request": "GET /.env HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nDB_PASSWORD=Ac3m3Pr0d!\nSECRET_KEY_BASE=8f7e6d5c4b3a29181716151413121110\nAPP_ENV=production",
+      "must_hide": [
+        "Ac3m3Pr0d!",
+        "8f7e6d5c4b3a29181716151413121110"
+      ]
+    },
+    {
+      "id": "cred-basic-header-custom",
+      "description": "Basic in un header non standard",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\nX-Api-Auth: Basic YWRtaW46U2VjcmV0MTIz\n\n",
+      "must_hide": [
+        "YWRtaW46U2VjcmV0MTIz"
+      ]
+    },
+    {
+      "id": "cred-commento-html",
+      "description": "Password lasciata in un commento HTML",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/html\n\n<html><!-- TODO rimuovere: admin / Adm1nPwd! --><body>ok</body></html>",
+      "must_hide": [
+        "Adm1nPwd!"
+      ],
+      "must_keep": [
+        "admin"
+      ]
+    },
+    {
+      "id": "cred-commento-js",
+      "description": "Credenziali in un commento JS a blocco",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: application/javascript\n\n/* utenza di test: test:T3st#2024 */\nvar a=1;",
+      "must_hide": [
+        "T3st#2024"
+      ]
+    },
+    {
+      "id": "cred-commento-falso-positivo",
+      "description": "Commento con versione: non e' una credenziale",
+      "severity": "low",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/html\n\n<!-- build: v2.3.1-Beta -->",
+      "must_hide": [],
+      "must_keep": [
+        "v2.3.1-Beta"
+      ]
+    },
+    {
+      "id": "cred-bcrypt",
+      "description": "Hash bcrypt in una risposta",
+      "severity": "high",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"pwd_hash\":\"$2b$12$KIXQJ9n7Y8u3Fz1pQ9Zr4eWb6sT0vL2mN5oP8qR1sT4uV7wX0yZ2a\"}",
+      "must_hide": [
+        "KIXQJ9n7Y8u3Fz1pQ9Zr4eWb6sT0vL2mN5oP8qR1sT4uV7wX0yZ2a"
+      ]
+    },
+    {
+      "id": "cred-digest",
+      "description": "Authorization Digest",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\nAuthorization: Digest username=\"m.rossi\", realm=\"acme\", response=\"6629fae49393a05397450978507c4ef1\"\n\n",
+      "must_hide": [
+        "m.rossi",
+        "6629fae49393a05397450978507c4ef1"
+      ]
+    },
+    {
+      "id": "cred-ntlm",
+      "description": "Authorization NTLM",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\nAuthorization: NTLM TlRMTVNTUAABAAAAB4IIogAAAAAAAAAAAAAAAAAAAAAGAbEdAAAADw==\n\n",
+      "must_hide": [
+        "TlRMTVNTUAABAAAAB4IIogAAAAAAAAAAAAAAAAAAAAAGAbEdAAAADw=="
+      ],
+      "must_keep": [
+        "NTLM"
+      ]
+    },
+    {
+      "id": "cred-ws-ticket",
+      "description": "Ticket WebSocket in query",
+      "severity": "critical",
+      "request": "GET /ws?ticket=Tk8sd7f6g5h4j3k2l1z0 HTTP/1.1\nHost: app.acme-corp.it\nUpgrade: websocket\nConnection: Upgrade\n\n",
+      "must_hide": [
+        "Tk8sd7f6g5h4j3k2l1z0"
+      ]
+    },
+    {
+      "id": "cred-reset-path",
+      "description": "Token di reset nel path",
+      "severity": "critical",
+      "request": "GET /reset-password/Qm9vZ2llV29vZ2llMTIzNDU2 HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "must_hide": [
+        "Qm9vZ2llV29vZ2llMTIzNDU2"
+      ]
+    },
+    {
+      "id": "cred-uuid-sessione-path",
+      "description": "UUID di sessione nel path",
+      "severity": "high",
+      "request": "GET /session/7f3c2a10-9b1e-4c5d-8e2f-0a1b2c3d4e5f/data HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "must_hide": [
+        "7f3c2a10-9b1e-4c5d-8e2f-0a1b2c3d4e5f"
+      ],
+      "must_keep": [
+        "/data"
+      ]
+    },
+    {
+      "id": "cred-uuid-risorsa",
+      "description": "UUID di una risorsa: resta leggibile (livello Standard)",
+      "severity": "low",
+      "request": "GET /orders/0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "must_hide": [],
+      "must_keep": [
+        "0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d"
+      ]
+    },
+    {
+      "id": "cred-obs-fold",
+      "description": "Token su due righe (obs-fold)",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: h.example\nX-Auth-Token: abc\n def123456789\n\n",
+      "must_hide": [
+        "def123456789"
+      ]
+    },
+    {
+      "id": "cred-azure-conn",
+      "description": "Connection string Azure Storage",
+      "severity": "critical",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"c\":\"DefaultEndpointsProtocol=https;AccountName=acmestore;AccountKey=dGhpc2lzYXZlcnlsb25nc2VjcmV0a2V5MTIzNDU2Nzg5MA==;EndpointSuffix=core.windows.net\"}",
+      "must_hide": [
+        "acmestore",
+        "dGhpc2lzYXZlcnlsb25nc2VjcmV0a2V5MTIzNDU2Nzg5MA=="
+      ],
+      "must_keep": [
+        "core.windows.net"
+      ]
+    },
+    {
+      "id": "cred-mongodb-uri",
+      "description": "URI MongoDB con credenziali",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nmongodb+srv://mongoAdm:M0ng0Pwd@cluster0.acme-corp.mongodb.net/prod",
+      "must_hide": [
+        "mongoAdm",
+        "M0ng0Pwd"
+      ]
+    },
+    {
+      "id": "cred-redis-uri",
+      "description": "URI Redis con password",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nredis://:R3d1sPwd@redis-01:6379/0",
+      "must_hide": [
+        "R3d1sPwd"
+      ]
+    },
+    {
+      "id": "cred-private-key",
+      "description": "Chiave privata PEM",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\n-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEAfakefakefakefakefakefakefake0123456789\n-----END RSA PRIVATE KEY-----",
+      "must_hide": [
+        "MIIEowIBAAKCAQEA"
+      ]
+    },
+    {
+      "id": "cred-jwt-claims",
+      "description": "JWT con email nei claims",
+      "severity": "critical",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"t\":\"eyJhbGciOiJIUzI1NiJ9.eyJlbWFpbCI6Im1hcmlvQGFjbWUuaXQifQ.abcdefgh\"}",
+      "must_hide": [
+        "eyJlbWFpbCI6Im1hcmlvQGFjbWUuaXQifQ"
+      ]
+    },
+    {
+      "id": "cred-yaml",
+      "description": "Password in YAML",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: application/yaml\n\ndatabase:\n  user: app\n  password: Yaml#Pwd77\n",
+      "must_hide": [
+        "Yaml#Pwd77"
+      ]
+    },
+    {
+      "id": "cred-xml-soap",
+      "description": "Credenziali in un envelope SOAP",
+      "severity": "critical",
+      "request": "POST /ws HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: text/xml\n\n<Envelope><Username>admin</Username><Password>P@ssw0rd!</Password></Envelope>",
+      "must_hide": [
+        "P@ssw0rd!"
+      ]
+    },
+    {
+      "id": "cred-graphql-inline",
+      "description": "Password inline in una mutation GraphQL",
+      "severity": "critical",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"query\":\"mutation { login(user: \\\"admin\\\", password: \\\"Gr4phQL!pwd\\\") { token } }\"}",
+      "must_hide": [
+        "Gr4phQL!pwd"
+      ],
+      "must_keep": [
+        "mutation"
+      ]
+    },
+    {
+      "id": "cred-cookie-multipli",
+      "description": "Cookie di sessione tra cookie innocui",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\nCookie: theme=dark; JSESSIONID=Zx81Kd9sL0pQ; lang=it\n\n",
+      "must_hide": [
+        "Zx81Kd9sL0pQ"
+      ],
+      "must_keep": [
+        "theme=dark"
+      ]
+    },
+    {
+      "id": "cred-set-cookie-senza-spazi",
+      "description": "Set-Cookie senza spazi",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\nSet-Cookie: SESSIONID=Zx81Kd9sL0pQ;Path=/;HttpOnly\n\n",
+      "must_hide": [
+        "Zx81Kd9sL0pQ"
+      ],
+      "must_keep": [
+        "HttpOnly"
+      ]
+    },
+    {
+      "id": "cred-csrf-hidden",
+      "description": "Token CSRF in un input hidden",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/html\n\n<input type=\"hidden\" name=\"csrf_token\" value=\"c5rfT0k3nV4lu3XYZ123\">",
+      "must_hide": [
+        "c5rfT0k3nV4lu3XYZ123"
+      ]
+    },
+    {
+      "id": "cred-api-key-query",
+      "description": "API key in query string",
+      "severity": "critical",
+      "request": "GET /v1/maps?api_key=k_9f8e7d6c5b4a3210&q=roma HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "must_hide": [
+        "k_9f8e7d6c5b4a3210"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,272 @@
+{
+  "category": "Segreti di provider (estesi)",
+  "description": "Formati di token ripresi dai rilevatori di segreti open source (stile gitleaks / trufflehog). Valori FINTI.",
+  "cases": [
+    {
+      "id": "azure-ad-client-secret",
+      "description": "Client secret di Azure AD",
+      "severity": "critical",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"cfg\":\"abc8Q~FAKEfakeFAKEfakeFAKEfakeFAKEfake0\"}",
+      "must_hide": [
+        "abc8Q~FAKEfakeFAKEfakeFAKEfakeFAKEfake0"
+      ]
+    },
+    {
+      "id": "vault-token",
+      "description": "Token HashiCorp Vault",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\nX-Vault-Token: hvs.FAKEfakeFAKEfakeFAKEfake0000\n\n",
+      "must_hide": [
+        "hvs.FAKEfakeFAKEfakeFAKEfake0000"
+      ]
+    },
+    {
+      "id": "vault-token-testo",
+      "description": "Token Vault nel testo",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nexport VAULT=hvs.FAKEfakeFAKEfakeFAKEfake0000",
+      "must_hide": [
+        "hvs.FAKEfakeFAKEfakeFAKEfake0000"
+      ]
+    },
+    {
+      "id": "doppler-token",
+      "description": "Token Doppler",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nDOPPLER=dp.pt.FAKEfakeFAKEfakeFAKEfakeFAKEfakeFAKEfake00",
+      "must_hide": [
+        "dp.pt.FAKEfakeFAKEfakeFAKEfakeFAKEfakeFAKEfake00"
+      ]
+    },
+    {
+      "id": "pypi-token",
+      "description": "Token PyPI",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\npypi-AgEIcHlwaS5vcmcFAKEfakeFAKEfakeFAKEfakeFAKEfake0000",
+      "must_hide": [
+        "pypi-AgEIcHlwaS5vcmcFAKEfakeFAKEfakeFAKEfakeFAKEfake0000"
+      ]
+    },
+    {
+      "id": "docker-pat",
+      "description": "Personal access token Docker Hub",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\ndckr_pat_FAKEfakeFAKEfakeFAKEfake00",
+      "must_hide": [
+        "dckr_pat_FAKEfakeFAKEfakeFAKEfake00"
+      ]
+    },
+    {
+      "id": "postman-key",
+      "description": "API key Postman",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nPMAK-FAKEfakeFAKEfake00000000-FAKEfakeFAKEfakeFAKEfakeFAKEfake00",
+      "must_hide": [
+        "PMAK-FAKEfakeFAKEfake00000000-FAKEfakeFAKEfakeFAKEfakeFAKEfake00"
+      ]
+    },
+    {
+      "id": "grafana-token",
+      "description": "Token di service account Grafana",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nglsa_FAKEfakeFAKEfakeFAKEfakeFAKEfake00_0a1b2c3d",
+      "must_hide": [
+        "glsa_FAKEfakeFAKEfakeFAKEfakeFAKEfake00_0a1b2c3d"
+      ]
+    },
+    {
+      "id": "newrelic-key",
+      "description": "User API key New Relic",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nNRAK-FAKEFAKEFAKEFAKEFAKEFAKE000",
+      "must_hide": [
+        "NRAK-FAKEFAKEFAKEFAKEFAKEFAKE000"
+      ]
+    },
+    {
+      "id": "sentry-dsn",
+      "description": "DSN Sentry (chiave nell'userinfo)",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: application/javascript\n\nSentry.init({dsn:\"https://0123456789abcdef0123456789abcdef@o12345.ingest.sentry.io/678\"})",
+      "must_hide": [
+        "0123456789abcdef0123456789abcdef"
+      ]
+    },
+    {
+      "id": "digitalocean-token",
+      "description": "Token DigitalOcean",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nDO=dop_v1_0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f",
+      "must_hide": [
+        "dop_v1_0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f0f"
+      ]
+    },
+    {
+      "id": "databricks-token",
+      "description": "Token Databricks",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\ndapi0123456789abcdef0123456789abcdef",
+      "must_hide": [
+        "dapi0123456789abcdef0123456789abcdef"
+      ]
+    },
+    {
+      "id": "atlassian-token",
+      "description": "API token Atlassian",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nATATT3xFfGF0FAKEfakeFAKEfakeFAKEfakeFAKEfake",
+      "must_hide": [
+        "ATATT3xFfGF0FAKEfakeFAKEfakeFAKEfakeFAKEfake"
+      ]
+    },
+    {
+      "id": "square-token",
+      "description": "Access token Square",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nsq0atp-FAKEfakeFAKEfake000000",
+      "must_hide": [
+        "sq0atp-FAKEfakeFAKEfake000000"
+      ]
+    },
+    {
+      "id": "facebook-token",
+      "description": "Access token Facebook",
+      "severity": "critical",
+      "request": "GET /me?access_token=EAACEdEose0cBAFAKEfakeFAKEfakeFAKEfakeFAKEfake0000 HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "must_hide": [
+        "EAACEdEose0cBAFAKEfakeFAKEfakeFAKEfakeFAKEfake0000"
+      ]
+    },
+    {
+      "id": "twitter-bearer",
+      "description": "Bearer token Twitter/X nel testo",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nTW=AAAAAAAAAAAAAAAAAAAAAFAKEfakeFAKEfake0000FAKEfake",
+      "must_hide": [
+        "AAAAAAAAAAAAAAAAAAAAAFAKEfakeFAKEfake0000FAKEfake"
+      ]
+    },
+    {
+      "id": "hubspot-key",
+      "description": "Private app token HubSpot",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\npat-na1-01234567-89ab-cdef-0123-456789abcdef",
+      "must_hide": [
+        "pat-na1-01234567-89ab-cdef-0123-456789abcdef"
+      ]
+    },
+    {
+      "id": "dropbox-token",
+      "description": "Token Dropbox",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\ndbx=sl.FAKEfakeFAKEfakeFAKEfakeFAKEfakeFAKEfake-FAKEfake",
+      "must_hide": [
+        "sl.FAKEfakeFAKEfakeFAKEfakeFAKEfakeFAKEfake-FAKEfake"
+      ]
+    },
+    {
+      "id": "notion-token",
+      "description": "Token di integrazione Notion",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nntn_FAKEfakeFAKEfakeFAKEfakeFAKEfakeFAKEfake00",
+      "must_hide": [
+        "ntn_FAKEfakeFAKEfakeFAKEfakeFAKEfakeFAKEfake00"
+      ]
+    },
+    {
+      "id": "figma-token",
+      "description": "Token Figma",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nfigd_FAKEfakeFAKEfakeFAKEfakeFAKEfake00",
+      "must_hide": [
+        "figd_FAKEfakeFAKEfakeFAKEfakeFAKEfake00"
+      ]
+    },
+    {
+      "id": "linear-key",
+      "description": "API key Linear",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nlin_api_FAKEfakeFAKEfakeFAKEfakeFAKEfakeFAKEfake00",
+      "must_hide": [
+        "lin_api_FAKEfakeFAKEfakeFAKEfakeFAKEfakeFAKEfake00"
+      ]
+    },
+    {
+      "id": "supabase-token",
+      "description": "Token Supabase",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nsbp_0a1b2c3d4e0a1b2c3d4e0a1b2c3d4e0a1b2c3d4e",
+      "must_hide": [
+        "sbp_0a1b2c3d4e0a1b2c3d4e0a1b2c3d4e0a1b2c3d4e"
+      ]
+    },
+    {
+      "id": "heroku-key-chiave",
+      "description": "API key Heroku (UUID sotto chiave dedicata)",
+      "severity": "critical",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"heroku_api_key\":\"01234567-89ab-cdef-0123-456789abcdef\"}",
+      "must_hide": [
+        "01234567-89ab-cdef-0123-456789abcdef"
+      ]
+    },
+    {
+      "id": "datadog-key-header",
+      "description": "Header DD-API-KEY",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\nDD-API-KEY: 0123456789abcdef0123456789abcdef\n\n",
+      "must_hide": [
+        "0123456789abcdef0123456789abcdef"
+      ]
+    },
+    {
+      "id": "npmrc",
+      "description": ".npmrc con _authToken",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\n//registry.npmjs.org/:_authToken=npm_FAKEfakeFAKEfakeFAKEfakeFAKEfake0000",
+      "must_hide": [
+        "npm_FAKEfakeFAKEfakeFAKEfakeFAKEfake0000"
+      ]
+    },
+    {
+      "id": "ssh-private-key",
+      "description": "Chiave privata OpenSSH",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\n-----BEGIN OPENSSH PRIVATE KEY-----\nb3BlbnNzaC1rZXktdjEAAAAAFAKEfakeFAKE\n-----END OPENSSH PRIVATE KEY-----",
+      "must_hide": [
+        "b3BlbnNzaC1rZXktdjEAAAAA"
+      ]
+    },
+    {
+      "id": "putty-key",
+      "description": "Chiave privata PuTTY",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nPuTTY-User-Key-File-3: ssh-rsa\nEncryption: none\nPrivate-Lines: 1\nAAAAgFAKEfakeFAKEfakeFAKEfakeFAKE\n",
+      "must_hide": [
+        "AAAAgFAKEfakeFAKEfakeFAKEfakeFAKE"
+      ],
+      "known_gap": "Formato PuTTY: le righe chiave non hanno un prefisso distintivo; serve un pattern multi-riga dedicato"
+    }
+  ]
+}

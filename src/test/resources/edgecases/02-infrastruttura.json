@@ -1,0 +1,326 @@
+{
+  "category": "Infrastruttura interna",
+  "description": "Topologia che un attaccante userebbe per muoversi lateralmente: host, utenti di sistema, percorsi.",
+  "cases": [
+    {
+      "id": "host-tld-interni",
+      "description": "Host .local / .corp / .internal in un errore",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 500 Internal Server Error\nContent-Type: text/plain\n\nconnect to db01.acme.local failed; fallback ldap.corp.internal",
+      "must_hide": [
+        "db01.acme.local",
+        "ldap.corp.internal"
+      ]
+    },
+    {
+      "id": "host-chiave-json",
+      "description": "Hostname senza TLD sotto una chiave di host",
+      "severity": "critical",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"db_host\":\"srv-sql-prod01\",\"port\":1433}",
+      "must_hide": [
+        "srv-sql-prod01"
+      ],
+      "must_keep": [
+        "1433"
+      ]
+    },
+    {
+      "id": "host-chiave-db",
+      "description": "Chiave 'db' con nome di server",
+      "severity": "critical",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"db\":\"srv-sql-prod01\"}",
+      "must_hide": [
+        "srv-sql-prod01"
+      ]
+    },
+    {
+      "id": "host-chiave-upstream",
+      "description": "Upstream con porta",
+      "severity": "critical",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"upstream\":\"payments-01:8443\"}",
+      "must_hide": [
+        "payments-01"
+      ],
+      "must_keep": [
+        "8443"
+      ]
+    },
+    {
+      "id": "host-kv-testo",
+      "description": "server=... in testo libero",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nbackup failed server=fs-bkp-02 code=13",
+      "must_hide": [
+        "fs-bkp-02"
+      ]
+    },
+    {
+      "id": "host-server-banner",
+      "description": "Banner del server: la versione resta leggibile (serve per le CVE)",
+      "severity": "low",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\nServer: nginx/1.18.0\n\n",
+      "must_hide": [],
+      "must_keep": [
+        "Server: nginx/1.18.0"
+      ]
+    },
+    {
+      "id": "host-json-server-software",
+      "description": "'server': nome di software senza cifre",
+      "severity": "low",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"server\":\"Apache\"}",
+      "must_hide": [],
+      "must_keep": [
+        "Apache"
+      ]
+    },
+    {
+      "id": "host-jdbc",
+      "description": "Connection string JDBC",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\njdbc:sqlserver://srv-sql-prod01:1433;databaseName=Paghe;user=sa;password=Sa2024!",
+      "must_hide": [
+        "srv-sql-prod01",
+        "Sa2024!"
+      ]
+    },
+    {
+      "id": "host-unc",
+      "description": "Percorso UNC",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\ncannot open \\\\fs01\\HR$\\paghe.xlsx",
+      "must_hide": [
+        "fs01"
+      ],
+      "must_keep": [
+        "HR$",
+        "paghe.xlsx"
+      ]
+    },
+    {
+      "id": "host-unc-json",
+      "description": "Percorso UNC con backslash escapati in JSON",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: application/json\n\n{\"path\":\"\\\\\\\\fs01\\\\share\\\\a.txt\"}",
+      "must_hide": [
+        "fs01"
+      ]
+    },
+    {
+      "id": "host-k8s",
+      "description": "Nome di servizio Kubernetes",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\ndial tcp: lookup payments.acme-prod.svc.cluster.local: no such host",
+      "must_hide": [
+        "acme-prod"
+      ]
+    },
+    {
+      "id": "ip-privato",
+      "description": "IP privato con porta nel body",
+      "severity": "high",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"upstream\":\"10.12.0.44:8080\"}",
+      "must_hide": [
+        "10.12.0.44"
+      ]
+    },
+    {
+      "id": "ip-cidr",
+      "description": "Rete interna in notazione CIDR",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nallowed: 10.20.0.0/16",
+      "must_hide": [
+        "10.20.0.0"
+      ],
+      "must_keep": [
+        "/16"
+      ]
+    },
+    {
+      "id": "ip-ipv6-link-local",
+      "description": "IPv6 link-local con zona",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\npeer fe80::1ff:fe23:4567:890a%eth0",
+      "must_hide": [
+        "fe80::1ff:fe23:4567:890a"
+      ]
+    },
+    {
+      "id": "ip-x-forwarded-for",
+      "description": "Catena X-Forwarded-For",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\nX-Forwarded-For: 203.0.113.7, 10.0.0.5\n\n",
+      "must_hide": [
+        "203.0.113.7",
+        "10.0.0.5"
+      ]
+    },
+    {
+      "id": "ip-forwarded-rfc7239",
+      "description": "Header Forwarded (RFC 7239)",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\nForwarded: for=198.51.100.17;proto=https;by=10.1.1.1\n\n",
+      "must_hide": [
+        "198.51.100.17"
+      ]
+    },
+    {
+      "id": "utente-ad",
+      "description": "Utente di dominio Windows",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nLogin failed for user 'ACME\\m.rossi'",
+      "must_hide": [
+        "m.rossi"
+      ],
+      "must_keep": [
+        "Login failed"
+      ]
+    },
+    {
+      "id": "utente-ad-registry",
+      "description": "Chiave di registro: non e' un utente",
+      "severity": "low",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\ncannot read HKLM\\software\\Acme",
+      "must_hide": [],
+      "must_keep": [
+        "HKLM\\software"
+      ]
+    },
+    {
+      "id": "utente-ad-escape",
+      "description": "Sequenza di escape: non e' un utente",
+      "severity": "low",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\n\"ERROR\\nfailed\"",
+      "must_hide": [],
+      "must_keep": [
+        "ERROR\\nfailed"
+      ]
+    },
+    {
+      "id": "path-windows-utente",
+      "description": "Profilo Windows in un percorso",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nat C:\\Users\\mrossi\\AppData\\Local\\app.dll",
+      "must_hide": [
+        "mrossi"
+      ],
+      "must_keep": [
+        "AppData"
+      ]
+    },
+    {
+      "id": "path-windows-utente-spazio",
+      "description": "Profilo Windows con spazio nel nome",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nC:\\Users\\Mario Rossi\\Desktop\\export.csv",
+      "must_hide": [
+        "Mario Rossi"
+      ]
+    },
+    {
+      "id": "path-windows-public",
+      "description": "C:\\Users\\Public non e' una persona",
+      "severity": "low",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nC:\\Users\\Public\\Documents\\x.txt",
+      "must_hide": [],
+      "must_keep": [
+        "Public"
+      ]
+    },
+    {
+      "id": "path-linux-home",
+      "description": "Home Linux in uno stack Python",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nFile \"/home/mrossi/app/main.py\", line 3",
+      "must_hide": [
+        "mrossi"
+      ],
+      "must_keep": [
+        "main.py"
+      ]
+    },
+    {
+      "id": "path-macos-home",
+      "description": "Home macOS",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\n/Users/mrossi/Projects/acme/build.log",
+      "must_hide": [
+        "mrossi"
+      ]
+    },
+    {
+      "id": "path-route-home",
+      "description": "Route web /home/...: non e' un utente",
+      "severity": "low",
+      "request": "GET /home/index HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "must_hide": [],
+      "must_keep": [
+        "/home/index"
+      ]
+    },
+    {
+      "id": "percorso-interno-dotfile",
+      "description": "Home con file nascosto",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\n/home/deploy01/.ssh/id_rsa not found",
+      "must_hide": [
+        "deploy01"
+      ]
+    },
+    {
+      "id": "banner-con-host-interno",
+      "description": "Banner con hostname interno: versione leggibile, host nascosto",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\nServer: Apache/2.4.41 (Ubuntu) web-03.acme.local\n\n",
+      "must_hide": [
+        "web-03.acme.local"
+      ],
+      "must_keep": [
+        "Apache/2.4.41 (Ubuntu)"
+      ]
+    },
+    {
+      "id": "banner-x-powered-by",
+      "description": "X-Powered-By leggibile",
+      "severity": "low",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\nX-Powered-By: PHP/7.4.3\n\n",
+      "must_hide": [],
+      "must_keep": [
+        "X-Powered-By: PHP/7.4.3"
+      ]
+    },
+    {
+      "id": "via-host-interno",
+      "description": "Via con proxy interno",
+      "severity": "high",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\nVia: 1.1 proxy-01.acme.local (squid/4.10)\n\n",
+      "must_hide": [
+        "proxy-01.acme.local"
+      ],
+      "must_keep": [
+        "1.1"
+      ]
+    }
+  ]
+}

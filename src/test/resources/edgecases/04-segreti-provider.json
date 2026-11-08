@@ -1,0 +1,120 @@
+{
+  "category": "Segreti di provider cloud",
+  "description": "Formati riconoscibili per prefisso. Valori FINTI, costruiti solo per avere la forma giusta.",
+  "cases": [
+    {
+      "id": "aws-access-key",
+      "description": "AWS access key id (esempio ufficiale AWS)",
+      "severity": "critical",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"k\":\"AKIAIOSFODNN7EXAMPLE\"}",
+      "must_hide": [
+        "AKIAIOSFODNN7EXAMPLE"
+      ]
+    },
+    {
+      "id": "aws-secret-key",
+      "description": "AWS secret access key sotto la sua chiave",
+      "severity": "critical",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"aws_secret_access_key\":\"wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY\"}",
+      "must_hide": [
+        "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY"
+      ]
+    },
+    {
+      "id": "github-token",
+      "description": "Token GitHub",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\ntoken=ghp_FAKEfakeFAKEfakeFAKEfake0000",
+      "must_hide": [
+        "ghp_FAKEfakeFAKEfakeFAKEfake0000"
+      ]
+    },
+    {
+      "id": "gitlab-token",
+      "description": "Token GitLab",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nglpat-FAKEfakeFAKEfake00000",
+      "must_hide": [
+        "glpat-FAKEfakeFAKEfake00000"
+      ]
+    },
+    {
+      "id": "slack-token",
+      "description": "Token Slack",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nSLACK=xoxb-FAKE-TOKEN-NOT-REAL-0000",
+      "must_hide": [
+        "xoxb-FAKE-TOKEN-NOT-REAL-0000"
+      ]
+    },
+    {
+      "id": "google-api-key",
+      "description": "Google API key",
+      "severity": "critical",
+      "request": "GET /maps?key=AIzaFAKEfakeFAKEfakeFAKEfakeFAKEfake000 HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "must_hide": [
+        "AIzaFAKEfakeFAKEfakeFAKEfakeFAKEfake000"
+      ]
+    },
+    {
+      "id": "stripe-test-key",
+      "description": "Chiave Stripe (test)",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nstripe sk_test_FAKEfakeFAKE0000",
+      "must_hide": [
+        "sk_test_FAKEfakeFAKE0000"
+      ]
+    },
+    {
+      "id": "openai-key",
+      "description": "Chiave API di un LLM",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\nX-LLM-Key: sk-FAKEfakeFAKEfake0000\n\n",
+      "must_hide": [
+        "sk-FAKEfakeFAKEfake0000"
+      ]
+    },
+    {
+      "id": "hf-token",
+      "description": "Token Hugging Face",
+      "severity": "critical",
+      "request": "GET / HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "response": "HTTP/1.1 200 OK\nContent-Type: text/plain\n\nHF_TOKEN=hf_FAKEfakeFAKEfakeFAKEfakeFAKEfake00",
+      "must_hide": [
+        "hf_FAKEfakeFAKEfakeFAKEfakeFAKEfake00"
+      ]
+    },
+    {
+      "id": "telegram-bot",
+      "description": "Token di un bot Telegram",
+      "severity": "critical",
+      "request": "GET /bot123456789:AAFAKEfakeFAKEfakeFAKEfakeFAKEfake00/getMe HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "must_hide": [
+        "123456789:AAFAKEfakeFAKEfakeFAKEfakeFAKEfake00"
+      ]
+    },
+    {
+      "id": "hex-generico-chiave",
+      "description": "Segreto esadecimale sotto una chiave neutra",
+      "severity": "high",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"value\":\"4f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c\"}",
+      "must_hide": [
+        "4f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c"
+      ]
+    },
+    {
+      "id": "hash-commit-standard",
+      "description": "Hash di commit sotto chiave identificativa: resta leggibile",
+      "severity": "low",
+      "request": "POST /api/v1/data HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"commit\":\"4f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c1234abcd\"}",
+      "must_hide": [],
+      "must_keep": [
+        "4f9a8b7c6d5e4f3a2b1c0d9e8f7a6b5c1234abcd"
+      ]
+    }
+  ]
+}

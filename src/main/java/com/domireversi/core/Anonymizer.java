@@ -131,12 +131,265 @@ public final class Anonymizer {
         this.cfg = cfg;
         this.map = map;
         this.ov = overrides != null ? overrides : Overrides.empty();
+        map.addExcluded(cfg.keepValues);
+        map.setKeepFilter(this::keepReadable);
+    }
+
+    /**
+     * Cosa resta leggibile anche quando un rilevatore lo vorrebbe nascondere:
+     * i payload del tester e i blob serializzati che non contengono dati
+     * (l'LLM deve vedere che e' un oggetto Java/.NET/pickle per aiutare).
+     */
+    private boolean keepReadable(String value, String prefix) {
+        if (isAttackPayload(value)) return true;
+        // solo i segreti generici: un cookie o un token serializzato resta una credenziale
+        return "SECRET".equals(prefix) && isCleanSerializedBlob(value);
+    }
+
+    /** Firme dei formati di serializzazione (sui byte decodificati). */
+    private static boolean serializedMagic(byte[] b) {
+        if (b.length < 4) return false;
+        int b0 = b[0] & 0xFF, b1 = b[1] & 0xFF, b2 = b[2] & 0xFF, b3 = b[3] & 0xFF;
+        if (b0 == 0xAC && b1 == 0xED && b2 == 0x00 && b3 == 0x05) return true;           // Java
+        if (b0 == 0x00 && b1 == 0x01 && b2 == 0x00 && b3 == 0x00 && b.length > 8
+                && (b[5] & 0xFF) == 0xFF && (b[6] & 0xFF) == 0xFF) return true;            // .NET BinaryFormatter
+        if (b0 == 0x80 && b1 >= 2 && b1 <= 5) return true;                                  // Python pickle
+        if (b0 == 0x04 && b1 == 0x08) return true;                                           // Ruby Marshal
+        return (b0 == 'O' || b0 == 'a' || b0 == 's') && b1 == ':' && Character.isDigit(b2); // PHP serialize
+    }
+
+    /**
+     * Blob base64/hex di un oggetto serializzato le cui stringhe interne non
+     * contengono nulla di sensibile per le regole attuali: resta leggibile.
+     */
+    private boolean isCleanSerializedBlob(String v) {
+        if (v == null || v.length() < 16 || v.length() > 200_000) return false;
+        byte[] raw = null;
+        String s = v.trim();
+        try {
+            if (s.matches("(?i)(?:ac ?ed ?00 ?05)[0-9a-f ]*") && s.replace(" ", "").length() % 2 == 0) {
+                String h = s.replace(" ", "");
+                raw = new byte[h.length() / 2];
+                for (int i = 0; i < raw.length; i++) raw[i] = (byte) Integer.parseInt(h.substring(2 * i, 2 * i + 2), 16);
+            } else if (s.matches("[A-Za-z0-9+/_-]+={0,2}")) {
+                String b64 = s.replace('-', '+').replace('_', '/');
+                raw = java.util.Base64.getMimeDecoder().decode(b64);
+            }
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+        if (raw == null || !serializedMagic(raw)) return false;
+        // stringhe stampabili (come `strings`): e' li' che starebbero email, nomi, host
+        StringBuilder strs = new StringBuilder();
+        int run = 0, start = 0;
+        for (int i = 0; i <= raw.length; i++) {
+            int c = i < raw.length ? raw[i] & 0xFF : 0;
+            if (c >= 0x20 && c < 0x7F) { if (run++ == 0) start = i; continue; }
+            if (run >= 4) strs.append(new String(raw, start, run, StandardCharsets.ISO_8859_1)).append('\n');
+            run = 0;
+        }
+        String text = strs.toString();
+        if (text.isEmpty()) return true;
+        SubstitutionMap snap = map.snapshot();
+        java.util.function.BiPredicate<String, String> keep = keepFilterOff();
+        try {
+            return scanSecrets(text).equals(text);
+        } finally {
+            map.restore(snap);
+            map.setKeepFilter(keep);
+        }
+    }
+
+    /** Disattiva il filtro durante una prova (evita la ricorsione) e restituisce quello attivo. */
+    private java.util.function.BiPredicate<String, String> keepFilterOff() {
+        java.util.function.BiPredicate<String, String> k = this::keepReadable;
+        map.setKeepFilter(null);
+        return k;
+    }
+
+    // ------------------------------------------------------------------ JWT
+    /**
+     * JWT leggibile per l'analisi (alg:none, kid, jku, ruoli, scadenze) senza
+     * che diventi una credenziale: la FIRMA e' sempre sostituita, quindi il token
+     * non si puo' riusare. Header e claims restano in chiaro solo se, decodificati,
+     * non contengono nulla di sensibile per le regole attuali; altrimenti si
+     * nasconde la parte che li contiene. Reversibile come tutto il resto.
+     */
+    private String maskJwt(String token, String prefix) {
+        String[] parts = token.split("\\.", -1);
+        if (parts.length != 3 || !parts[0].startsWith("eyJ")) return map.placeholder(token, prefix);
+        String head = decodeJwtPart(parts[0]);
+        if (head == null || !jwtJsonIsClean(head)) return map.placeholder(token, prefix);
+        String body = decodeJwtPart(parts[1]);
+        if (body == null || !jwtJsonIsClean(body)) {
+            String ph = map.placeholder(parts[1] + "." + parts[2], "JWT");
+            return ph.equals(parts[1] + "." + parts[2]) ? token : parts[0] + "." + ph;
+        }
+        if (parts[2].isEmpty()) return token;   // alg:none con claims innocui: niente da nascondere
+        String sig = map.placeholder(parts[2], "JWT_SIG");
+        return parts[0] + "." + parts[1] + "." + sig;
+    }
+
+    /**
+     * Claim d'identita' (context.jwt_identity_claims: sub, upn, preferred_username...)
+     * con un valore che indica una persona: numeri, UUID e utenze generiche (admin,
+     * test) non lo sono, "mrossi" si'.
+     */
+    private boolean hasPersonalClaim(String json) {
+        try {
+            com.google.gson.JsonElement el = com.google.gson.JsonParser.parseString(json);
+            if (!el.isJsonObject()) return false;
+            for (Map.Entry<String, com.google.gson.JsonElement> e : el.getAsJsonObject().entrySet()) {
+                if (!cfg.jwtIdentityClaims.contains(normKey(e.getKey()))) continue;
+                com.google.gson.JsonElement v = e.getValue();
+                if (!v.isJsonPrimitive() || !v.getAsJsonPrimitive().isString()) continue;
+                String s = v.getAsString().trim();
+                if (s.isEmpty() || s.chars().allMatch(Character::isDigit) || UUID.matcher(s).matches()) continue;
+                if (cfg.commonUsers.contains(s.toLowerCase(Locale.ROOT))) continue;
+                return true;
+            }
+            return false;
+        } catch (RuntimeException ex) {
+            return true;
+        }
+    }
+
+    private static String decodeJwtPart(String p) {
+        try {
+            String s = new String(java.util.Base64.getUrlDecoder().decode(p.replace('+', '-').replace('/', '_')
+                    .replace("=", "")), StandardCharsets.UTF_8);
+            String t = s.trim();
+            return t.startsWith("{") && t.endsWith("}") ? s : null;
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    /** Il JSON decodificato resta identico passando per l'anonimizzazione? (prova senza effetti) */
+    private boolean jwtJsonIsClean(String json) {
+        if (hasPersonalClaim(json)) return false;
+        SubstitutionMap snap = map.snapshot();
+        java.util.function.BiPredicate<String, String> keep = keepFilterOff();
+        try {
+            return rewriteJson(json, 0).equals(json);
+        } catch (RuntimeException | StackOverflowError e) {
+            return false;
+        } finally {
+            map.restore(snap);
+            map.setKeepFilter(keep);
+        }
+    }
+
+    /**
+     * Valore con sintassi d'attacco (SSTI, SQLi, XSS, CRLF, traversal, JNDI...):
+     * e' un payload scritto dal tester, non un dato del cliente, e l'LLM deve
+     * poterlo leggere. Marcatori in context.attack_markers.
+     */
+    public boolean isAttackPayload(String v) {
+        if (v == null || v.length() < 3 || v.length() > 8192) return false;
+        for (Pattern p : cfg.attackMarkers) if (p.matcher(v).find()) return true;
+        return false;
     }
 
     public SubstitutionMap getMap() { return map; }
 
     public String anonymizeRequest(String raw) { return anonymizeMessage(raw); }
-    public String anonymizeResponse(String raw) { return anonymizeMessage(raw); }
+    public String anonymizeResponse(String raw) { return isTranscript(raw) ? anonymizeTranscript(raw) : anonymizeMessage(raw); }
+
+    /** Body gzip/deflate decompressi finora (la UI lo segnala). */
+    private int decompressedBodies;
+
+    public int decompressedBodies() {
+        return decompressedBodies;
+    }
+
+    /** Decompressione gzip/deflate del body (byte come caratteri 0-255); null se non si puo'. */
+    static String inflateBody(String body, String contentEncoding) {
+        if (body == null || body.length() < 2 || contentEncoding == null) return null;
+        String ce = contentEncoding.trim().toLowerCase(Locale.ROOT);
+        boolean gzip = ce.equals("gzip") || ce.equals("x-gzip");
+        if (!gzip && !ce.equals("deflate")) return null;
+        byte[] raw = new byte[body.length()];
+        for (int i = 0; i < raw.length; i++) {
+            char c = body.charAt(i);
+            if (c > 0xFF) return null; // non sono byte grezzi: niente da decomprimere
+            raw[i] = (byte) c;
+        }
+        try {
+            java.io.InputStream in = gzip
+                    ? new java.util.zip.GZIPInputStream(new java.io.ByteArrayInputStream(raw))
+                    : new java.util.zip.InflaterInputStream(new java.io.ByteArrayInputStream(raw),
+                            new java.util.zip.Inflater((raw[0] & 0x0F) != 8)); // deflate grezzo o zlib
+            byte[] out;
+            try (in) {
+                out = in.readNBytes(20_000_000);
+            }
+            java.nio.charset.CharsetDecoder dec = StandardCharsets.UTF_8.newDecoder();
+            try {
+                return dec.decode(java.nio.ByteBuffer.wrap(out)).toString();
+            } catch (java.nio.charset.CharacterCodingException notUtf8) {
+                return new String(out, StandardCharsets.ISO_8859_1);
+            }
+        } catch (java.io.IOException | RuntimeException e) {
+            return null;
+        }
+    }
+
+    // ------------------------------------------------------------ trascritti
+    // Contenuti che passano da Burp ma non sono una coppia request/response:
+    // messaggi WebSocket, issue dello Scanner. Il testo e' diviso in blocchi da righe
+    // "### ..." (intestazioni, che si scansionano come testo) e ogni blocco si
+    // anonimizza secondo il suo contenuto (JSON, Socket.IO, HTML, testo).
+
+    public static final String TRANSCRIPT_HEAD = "### Domi Reversi";
+    private static final Pattern TRANSCRIPT_LINE = Pattern.compile("(?m)^### [^\\r\\n]*");
+    private static final Pattern SOCKETIO_PREFIX = Pattern.compile("^(\\s*\\d{1,3}(?:/[\\w./-]{0,100},)?\\d{0,10})(?=[\\[{])");
+
+    public static boolean isTranscript(String s) {
+        return s != null && s.startsWith(TRANSCRIPT_HEAD);
+    }
+
+    public String anonymizeTranscript(String text) {
+        if (text == null) return "";
+        reserveLiterals(text);
+        try {
+            StringBuilder out = new StringBuilder(text.length() + 64);
+            Matcher m = TRANSCRIPT_LINE.matcher(text);
+            int last = 0;
+            while (m.find()) {
+                out.append(anonTranscriptBlock(text.substring(last, m.start())));
+                out.append(scanSecrets(m.group()));
+                last = m.end();
+            }
+            out.append(anonTranscriptBlock(text.substring(last)));
+            return contextPass(applyForced(out.toString()));
+        } catch (Throwable t) {
+            try {
+                return contextPass(applyForced(scanSecrets(text)));
+            } catch (Throwable t2) {
+                return "[Domi Reversi] Impossibile anonimizzare questo contenuto in modo sicuro.";
+            }
+        }
+    }
+
+    /** Un blocco: a capo iniziali e finali restano, il contenuto si anonimizza per tipo. */
+    private String anonTranscriptBlock(String block) {
+        if (block.trim().isEmpty()) return block;
+        int s = 0, e = block.length();
+        while (s < e && (block.charAt(s) == '\n' || block.charAt(s) == '\r')) s++;
+        while (e > s && (block.charAt(e - 1) == '\n' || block.charAt(e - 1) == '\r')) e--;
+        String body = block.substring(s, e);
+        String prefix = "";
+        Matcher sio = SOCKETIO_PREFIX.matcher(body);
+        if (sio.find()) {                       // Socket.IO: 42["evento",{...}]
+            prefix = sio.group(1);
+            body = body.substring(prefix.length());
+        }
+        String trimmed = body.trim();
+        String ct = trimmed.startsWith("{") || trimmed.startsWith("[") ? "application/json"
+                : trimmed.startsWith("<") ? "text/html" : "";
+        return block.substring(0, s) + prefix + anonymizeBody(body, ct) + block.substring(e);
+    }
 
     private static final Pattern LITERAL_PLACEHOLDER = Pattern.compile(
             "(?<![A-Za-z0-9_])[A-Z][A-Z0-9]*(?:_[A-Z][A-Z0-9]*)*_\\d{1,9}(?![A-Za-z0-9_])");
@@ -153,17 +406,27 @@ public final class Anonymizer {
             if (t == null || t.isEmpty()) continue;
             Matcher m = LITERAL_PLACEHOLDER.matcher(t);
             while (m.find()) map.reserve(m.group());
+
+            // anche la forma con l'underscore escapato da markdown ("EMAIL\_1"), che la
+            // de-anonimizzazione accetta: un letterale cosi' non deve collidere
+            if (t.indexOf("\\_") >= 0) {
+                Matcher e = LITERAL_ESCAPED.matcher(t);
+                while (e.find()) map.reserve(e.group().replace("\\_", "_"));
+            }
         }
     }
+
+    private static final Pattern LITERAL_ESCAPED = Pattern.compile(
+            "(?<![A-Za-z0-9_\\\\])[A-Z][A-Z0-9]{0,40}(?:\\\\?_[A-Z][A-Z0-9]{0,40}){0,8}\\\\?_\\d{1,9}(?![A-Za-z0-9_])");
 
     private String anonymizeMessage(String raw) {
         if (raw == null) return "";
         reserveLiterals(raw);
         try {
-            return applyForced(anonymizeStructured(raw));
+            return contextPass(applyForced(anonymizeStructured(raw)));
         } catch (Throwable t) {
             try {
-                return applyForced(scanSecrets(raw));
+                return contextPass(applyForced(scanSecrets(raw)));
             } catch (Throwable t2) {
                 // mai restituire il contenuto originale se non si e' riusciti a ripulirlo
                 return "[Domi Reversi] Impossibile anonimizzare questo contenuto in modo sicuro.";
@@ -181,17 +444,42 @@ public final class Anonymizer {
         boolean chunked = te != null && te.toLowerCase(Locale.ROOT).contains("chunked");
 
         String body = msg.body;
-        String dechunked = chunked ? dechunk(body) : null;
+        Chunked framing = chunked ? Chunked.parse(body) : null;
+        String dechunked = framing != null ? framing.data() : (chunked ? dechunk(body) : null);
         if (dechunked != null) body = dechunked;
+        String prevName = null;
         for (HttpMessage.Header h : msg.headers) {
+            if (h.name.isEmpty() && prevName != null && !h.value.isEmpty()
+                    && (h.value.charAt(0) == ' ' || h.value.charAt(0) == '\t')) {
+                // continuazione (obs-fold) dell'header precedente: stessa strategia,
+                // altrimenti la seconda riga di un token resterebbe in chiaro
+                String inner = h.value.trim();
+                if (!inner.isEmpty()) {
+                    int lead = h.value.indexOf(inner);
+                    String[] nv = anonHeader(prevName, inner);
+                    h.value = h.value.substring(0, lead) + nv[1] + h.value.substring(lead + inner.length());
+                }
+                continue;
+            }
+            String origName = h.name;
             String[] nv = anonHeader(h.name, h.value);
             h.name = nv[0];
             h.value = nv[1];
+            prevName = origName.isEmpty() ? null : origName;
+        }
+        String inflated = inflateBody(body, msg.get("Content-Encoding"));
+        if (inflated != null) {
+            // body gzip/deflate: si mostra decompresso e anonimizzato. L'LLM deve leggere il
+            // contenuto; la ricostruzione restituisce il testo, non i byte compressi.
+            decompressedBodies++;
+            msg.body = anonymizeBody(inflated, fullCt);
+            return msg.serialize();
         }
         String anonBody = anonymizeBody(body, fullCt);
         // Content-Length resta quello originale: il messaggio anonimizzato deve
         // tornare identico byte per byte con la de-anonimizzazione.
-        if (dechunked != null) anonBody = rechunk(anonBody, msg.newline);
+        if (framing != null) anonBody = reframe(framing, anonBody, fullCt, msg.newline);
+        else if (dechunked != null) anonBody = rechunk(anonBody, msg.newline);
         msg.body = anonBody;
         return msg.serialize();
     }
@@ -231,6 +519,11 @@ public final class Anonymizer {
         String low = name.toLowerCase(Locale.ROOT);
         if (ov.excludeHeaders.contains(low)) {
             return new String[]{name, value};
+        }
+        if (low.equals("host") || low.equals(":authority")) {
+            // il dominio di destinazione identifica il cliente: il suo nome base
+            // ("acme-corp") va nascosto anche fuori dagli host (path, header, testo)
+            map.addOrgTerm(orgLabel(value));
         }
         if (ov.extraHeaders.contains(low) && !value.trim().isEmpty()) { // scelta esplicita dell'utente
             return new String[]{name, map.placeholder(value.trim(), "CUSTOM")};
@@ -285,7 +578,7 @@ public final class Anonymizer {
                 case "location": return scanUrlValue(value);
                 case "auth_challenge": return stratAuthChallenge(value);
                 case "redact": return value.trim().isEmpty() ? value
-                        : map.placeholder(value.trim(), "REDACTED", false);
+                        : map.placeholder(value.trim(), "REDACTED"); // numerato: reversibile
                 case "user_agent": return placeholderTrim(value, "USER_AGENT");
                 default: return scanSecrets(value);
             }
@@ -316,9 +609,10 @@ public final class Anonymizer {
         if (v.isEmpty()) return value;
         Matcher m = AUTH_SCHEME.matcher(v);
         if (m.matches()) {
-            return m.group(1) + " " + map.placeholder(m.group(2).trim(), prefix);
+            String tok = m.group(2).trim();
+            return m.group(1) + " " + (JWT_SHAPE.matcher(tok).matches() ? maskJwt(tok, prefix) : map.placeholder(tok, prefix));
         }
-        return map.placeholder(v, prefix);
+        return JWT_SHAPE.matcher(v).matches() ? maskJwt(v, prefix) : map.placeholder(v, prefix);
     }
 
     private boolean isSessionCookie(String name) {
@@ -341,8 +635,11 @@ public final class Anonymizer {
         String prefix = isSessionCookie(kname) ? "SESSION" : "COOKIE";
         String byName = sensitiveKeyPrefix(kname);
         if (byName != null && !prefix.equals("SESSION")) prefix = byName;
-        return lead + kname + "=" + map.placeholder(v.trim(), prefix);
+        String tv = v.trim();
+        return lead + kname + "=" + (JWT_SHAPE.matcher(tv).matches() ? maskJwt(tv, prefix) : map.placeholder(tv, prefix));
     }
+
+    private static final Pattern JWT_SHAPE = Pattern.compile("eyJ[A-Za-z0-9_-]{5,}\\.[A-Za-z0-9_-]{5,}\\.[A-Za-z0-9_-]*");
 
     private String stratCookie(String value) {
         String[] parts = value.split(";", -1);
@@ -383,8 +680,13 @@ public final class Anonymizer {
         return String.join(";", out);
     }
 
+    private static final Pattern QUOTED_VALUE = Pattern.compile("\"([^\"]{0,4096})\"");
+
     private String stratAuthChallenge(String value) {
-        String redacted = value.replaceAll("\"[^\"]{0,4096}\"", "\"REDACTED\"");
+        // realm="ACME Intranet", nonce="...": ogni valore tra virgolette diventa
+        // REDACTED_n (numerato, quindi reversibile come gli altri segnaposto)
+        String redacted = regexReplace(value, QUOTED_VALUE, m -> m.group(1).isEmpty() ? m.group()
+                : "\"" + map.placeholder(m.group(1), "REDACTED") + "\"");
         return applyPatterns(redacted, false);
     }
 
@@ -672,6 +974,25 @@ public final class Anonymizer {
         try {
             String ct = contentType == null ? "" : contentType.toLowerCase(Locale.ROOT);
 
+            String bin = anonBinaryFormat(body, ct);
+            if (bin != null) return bin;
+            String u16 = anonUtf16Body(body, contentType);
+            if (u16 != null) return u16;
+            String trimmedStart = body.stripLeading();
+            if (ct.contains("vcard") || ct.contains("calendar") || trimmedStart.startsWith("BEGIN:VCARD")
+                    || trimmedStart.startsWith("BEGIN:VCALENDAR")) {
+                return scanSecrets(anonDirectoryText(body));
+            }
+            if (body.contains("<methodCall") || body.contains("<methodResponse")) {
+                List<String> saved = new ArrayList<>();
+                String x = protectAll(anonXmlRpc(body), XR_NAME_TAG, saved);  // <name>password</name> e' un nome di campo
+                return restore(anonHtml(x), saved);
+            }
+            if (ct.contains("csv") || ct.contains("tab-separated")) {
+                String r = anonDelimited(body);
+                if (r != null) return r;
+            }
+
             if (ct.contains("multipart/")) {
                 String boundary = extractBoundary(contentType);
                 if (boundary == null) boundary = detectBoundaryFromBody(body);
@@ -688,7 +1009,14 @@ public final class Anonymizer {
                 return anonGraphqlDoc(body);
             }
             if (ct.contains("json") || ((first == '{' || first == '[') && looksLikeJsonDoc(stripped))) {
-                return rewriteJson(body, 0);
+                // introspezione GraphQL: "name" e' il nome di un tipo o di un campo, non di una persona
+                boolean prev = introspection;
+                introspection = prev || body.contains("\"__schema\"") || body.contains("\"__type\"");
+                try {
+                    return rewriteJson(body, 0);
+                } finally {
+                    introspection = prev;
+                }
             }
             boolean isForm = ct.contains("x-www-form-urlencoded")
                     || (ct.isEmpty() && body.length() < 100_000
@@ -700,10 +1028,405 @@ public final class Anonymizer {
             if (ct.contains("html") || ct.contains("xml") || ct.contains("svg") || first == '<') {
                 return anonHtml(body);
             }
+            if (looksBinary(body)) return scanSecrets(anonBinaryRuns(body));
             return scanSecrets(body);
         } catch (StackOverflowError | RuntimeException e) {
             return scanSecrets(body);
         }
+    }
+
+    // ------------------------------------------------- formati binari decodificati
+    /** Body binari decodificati (protobuf, gRPC, MessagePack): la UI lo segnala. */
+    private int decodedBodies;
+
+    public int decodedBodies() {
+        return decodedBodies;
+    }
+
+    /**
+     * gRPC / gRPC-web / gRPC-web-text / protobuf / MessagePack: decodificati senza
+     * schema in testo leggibile e anonimizzati. Null se il tipo non c'entra o se i
+     * byte non si decodificano (si passa alla scansione generica).
+     */
+    private String anonBinaryFormat(String body, String ct) {
+        boolean grpcText = ct.contains("grpc-web-text");
+        boolean grpc = !grpcText && ct.contains("grpc");
+        boolean proto = ct.contains("protobuf") || ct.contains("x-proto");
+        boolean msgpack = ct.contains("msgpack");
+        if (!grpcText && !grpc && !proto && !msgpack) return null;
+        byte[] data;
+        if (grpcText) {
+            data = decodeGrpcWebText(body);
+        } else {
+            data = BinaryFormats.latin1(body);
+        }
+        if (data == null || data.length == 0) return null;
+        String out;
+        String label;
+        if (msgpack) {
+            String json = BinaryFormats.msgpackJson(data);
+            if (json == null) return null;
+            StringBuilder sb = new StringBuilder();
+            for (String line : json.split("\n", -1)) sb.append(rewriteJson(line, 0)).append('\n');
+            out = sb.toString();
+            label = "MessagePack";
+        } else if (grpc || grpcText) {
+            out = BinaryFormats.grpcText(data, this::anonProtoString, this::scanSecrets);
+            if (out == null) out = BinaryFormats.protobufText(data, this::anonProtoString); // senza frame
+            label = grpcText ? "gRPC-web-text" : "gRPC";
+        } else {
+            out = BinaryFormats.protobufText(data, this::anonProtoString);
+            label = "protobuf";
+        }
+        if (out == null) return null;
+        decodedBodies++;
+        // l'LLM legge la struttura; la ricostruzione restituisce questo testo, non i byte
+        return "### Domi Reversi · " + label + (msgpack ? " decodificato in JSON" : " decodificato senza schema (numero di campo: valore)")
+                + "\n" + out;
+    }
+
+    /** gRPC-web-text: frame in base64, anche piu' blocchi base64 concatenati (ognuno col suo padding). */
+    private static byte[] decodeGrpcWebText(String body) {
+        String s = body.replaceAll("\\s", "");
+        if (s.isEmpty() || !s.matches("[A-Za-z0-9+/=]+")) return null;
+        java.io.ByteArrayOutputStream out = new java.io.ByteArrayOutputStream();
+        Matcher m = Pattern.compile("[A-Za-z0-9+/]+={0,2}").matcher(s);
+        try {
+            while (m.find()) out.write(java.util.Base64.getDecoder().decode(m.group()));
+        } catch (IllegalArgumentException | java.io.IOException e) {
+            return null;
+        }
+        return out.toByteArray();
+    }
+
+    /** Stringa dentro un messaggio protobuf: chiave precedente (map/Struct), regole, forma da segreto o da nome. */
+    private String anonProtoString(String prevKey, String value) {
+        if (value.isEmpty() || map.looksLikePlaceholder(value)) return value;
+        if (looksLikeKeyName(prevKey)) {
+            String kp = sensitiveKeyPrefix(prevKey);
+            if (kp != null && !skipValue(value)) return map.placeholder(value, kp);
+        }
+        String s = scanValue(value, null, 0);
+        if (!s.equals(value)) return s;
+        return secretOrNameShaped(value);
+    }
+
+    private static final Pattern KEY_NAME = Pattern.compile("[A-Za-z_][A-Za-z0-9_.-]{0,63}");
+
+    /** Un nome di campo vero (password, user_email, spring.datasource.password), non un valore. */
+    private static boolean looksLikeKeyName(String k) {
+        if (k == null || !KEY_NAME.matcher(k).matches()) return false;
+        return k.chars().filter(Character::isDigit).count() <= 2; // "Pb0Pwd2024" e' un valore, non un campo
+    }
+
+    /** Senza nomi di campo: una stringa con la forma di una password o di un nome e cognome. */
+    private String secretOrNameShaped(String v) {
+        if (looksSecretShaped(v)) return map.placeholder(v, "SECRET");
+        if (TWO_WORD_NAME.matcher(v).matches() && plausiblePersonName(v)) return map.placeholder(v, "NAME");
+        return v;
+    }
+
+    private static final Pattern TWO_WORD_NAME = Pattern.compile("\\p{Lu}\\p{Ll}{1,30}(?: \\p{Lu}\\p{Ll}{1,30}){1,2}");
+
+    private boolean looksSecretShaped(String v) {
+        if (v.length() < 8 || v.length() > 256 || v.indexOf(' ') >= 0) return false;
+        if (v.contains("://") || v.startsWith("/") || v.matches("[\\w.-]+\\.(?:png|jpe?g|gif|svg|js|css|html?|json|xml|pdf)")) return false;
+        if (VERSIONISH.matcher(v).matches()) return false;
+        return charClasses(v) >= 3;
+    }
+
+    // --- binari generici con nomi di campo (BSON, AMF, Hessian, WCF msbin1, Thrift...) ---
+    /** Abbastanza caratteri di controllo da non essere testo. */
+    static boolean looksBinary(String s) {
+        int ctl = 0, n = Math.min(s.length(), 65_536);
+        for (int i = 0; i < n; i++) {
+            char c = s.charAt(i);
+            if ((c < 0x20 && c != '\n' && c != '\r' && c != '\t') || (c >= 0x7F && c <= 0x9F)) ctl++;
+        }
+        return ctl >= 3 && ctl * 100 >= n;
+    }
+
+    /**
+     * Sequenze stampabili di un body binario, nell'ordine: se una e' il nome di un
+     * campo sensibile (password, email...) la successiva e' il suo valore; altrimenti
+     * si nasconde cio' che ha la forma di un segreto. Sostituzione sul posto: la
+     * de-anonimizzazione restituisce gli stessi byte.
+     */
+    private String anonBinaryRuns(String body) {
+        StringBuilder out = new StringBuilder(body.length());
+        String prevRun = null;
+        int i = 0, n = body.length();
+        while (i < n) {
+            char c = body.charAt(i);
+            if (c < 0x20 || c > 0x7E) { out.append(c); i++; continue; }
+            int s = i;
+            while (i < n && body.charAt(i) >= 0x20 && body.charAt(i) <= 0x7E) i++;
+            String run = body.substring(s, i);
+            String repl = run;
+            if (run.length() >= 3 && !map.looksLikePlaceholder(run)) {
+                String kp = looksLikeKeyName(prevRun == null ? null : prevRun.trim()) ? sensitiveKeyPrefix(prevRun.trim()) : null;
+                if (kp != null && !skipValue(run)) repl = map.placeholder(run, kp);
+                else repl = secretOrNameShaped(run);
+            }
+            out.append(repl);
+            prevRun = run;
+        }
+        return out.toString();
+    }
+
+    // ------------------------------------------------------------ XML-RPC
+    // I parametri sono posizionali e senza nome: wp.getUsers(blog_id, username, password).
+    // Le posizioni delle credenziali per metodo stanno in context.xmlrpc_credentials;
+    // i membri di <struct> si trattano per nome come le chiavi JSON.
+
+    private static final Pattern XR_NAME_TAG = Pattern.compile("<name>[^<]{0,200}</name>|<methodName>[^<]{0,200}</methodName>");
+    private static final Pattern XR_METHOD = Pattern.compile("<methodName>\\s*([^<\\s]{1,200})\\s*</methodName>");
+    private static final Pattern XR_PARAM_VALUE = Pattern.compile(
+            "<param>\\s*<value>\\s*(?:<(\\w{1,20})>([^<]{0,4096})</\\1>|([^<]{0,4096}))\\s*</value>\\s*</param>");
+    private static final Pattern XR_MEMBER = Pattern.compile(
+            "(<member>\\s*<name>\\s*([^<]{1,200}?)\\s*</name>\\s*<value>\\s*(?:<string>)?)([^<]{1,4096})(?=(?:</string>)?\\s*</value>)");
+    private static final Pattern XR_MULTICALL = Pattern.compile(
+            "<name>\\s*methodName\\s*</name>\\s*<value>\\s*(?:<string>)?([^<]{1,200})(?:</string>)?\\s*</value>\\s*</member>\\s*<member>\\s*<name>\\s*params\\s*</name>\\s*<value>\\s*<array>\\s*<data>(.*?)</data>",
+            Pattern.DOTALL);
+    private static final Pattern XR_DATA_VALUE = Pattern.compile("<value>\\s*(?:<(\\w{1,20})>([^<]{0,4096})</\\1>|([^<]{0,4096}))\\s*</value>");
+
+    private String anonXmlRpc(String body) {
+        // membri di struct per nome
+        body = regexReplace(body, XR_MEMBER, m -> {
+            String prefix = sensitiveKeyPrefix(m.group(2));
+            String v = m.group(3);
+            if (prefix == null || v.trim().isEmpty() || skipValue(v.trim())) return m.group();
+            return m.group(1) + map.placeholder(v, prefix);
+        });
+        // parametri posizionali della chiamata principale
+        Matcher mm = XR_METHOD.matcher(body);
+        if (mm.find()) {
+            int[] pos = xmlRpcPositions(mm.group(1));
+            int[] idx = {0};
+            body = regexReplace(body, XR_PARAM_VALUE, m -> {
+                idx[0]++;                                     // ogni parametro conta, anche <int>
+                if (m.group(1) != null && !m.group(1).equals("string")) return m.group();
+                String v = m.group(2) != null ? m.group(2) : m.group(3);
+                int start = m.group(2) != null ? m.start(2) : m.start(3);
+                String rep = xmlRpcValue(v, idx[0], pos);
+                if (rep.equals(v)) return m.group();
+                String whole = m.group();
+                int off = start - m.start();
+                return whole.substring(0, off) + rep + whole.substring(off + v.length());
+            });
+        }
+        // system.multicall: ogni chiamata annidata con i suoi parametri
+        return regexReplace(body, XR_MULTICALL, m -> {
+            int[] pos = xmlRpcPositions(m.group(1).trim());
+            int[] idx = {0};
+            String data = regexReplace(m.group(2), XR_DATA_VALUE, d -> {
+                idx[0]++;
+                if (d.group(1) != null && !d.group(1).equals("string")) return d.group();
+                String v = d.group(2) != null ? d.group(2) : d.group(3);
+                int start = d.group(2) != null ? d.start(2) : d.start(3);
+                String rep = xmlRpcValue(v, idx[0], pos);
+                if (rep.equals(v)) return d.group();
+                String whole = d.group();
+                int off = start - d.start();
+                return whole.substring(0, off) + rep + whole.substring(off + v.length());
+            });
+            String whole = m.group();
+            int off = m.start(2) - m.start();
+            return whole.substring(0, off) + data + whole.substring(off + m.group(2).length());
+        });
+    }
+
+    /** {posizione username, posizione password} (1-based) per il metodo, o {0,0}. */
+    private int[] xmlRpcPositions(String method) {
+        String best = null;
+        for (String k : cfg.xmlrpcCredentials.keySet()) {
+            if ((method.equals(k) || (k.endsWith(".") && method.startsWith(k))) && (best == null || k.length() > best.length())) best = k;
+        }
+        return best == null ? new int[]{0, 0} : cfg.xmlrpcCredentials.get(best);
+    }
+
+    private String xmlRpcValue(String v, int index, int[] pos) {
+        String t = v.trim();
+        if (t.isEmpty() || map.looksLikePlaceholder(t)) return v;
+        String rep = null;
+        if (index == pos[0]) rep = map.placeholder(t, "USERNAME");
+        else if (index == pos[1]) rep = map.placeholder(t, "PASSWORD");
+        if (rep == null) {
+            String s = scanValue(t, null, 0);
+            rep = s.equals(t) ? secretOrNameShaped(t) : s;
+        }
+        if (rep.equals(t)) return v;
+        int lead = v.indexOf(t);
+        return v.substring(0, lead) + rep + v.substring(lead + t.length());
+    }
+
+    // ------------------------------------------------------- vCard / iCalendar
+    // CardDAV / CalDAV, export di contatti e inviti: proprieta' "NOME;PARAM=..:valore".
+    // Le proprieta' sensibili (context.vcard_properties) si nascondono per intero,
+    // il parametro CN (nome di organizzatore e partecipanti) diventa NAME_n, il resto
+    // (SUMMARY, DESCRIPTION, mailto:) si scansiona come testo.
+
+    private static final Pattern VCARD_LINE = Pattern.compile("(?m)^([A-Za-z0-9-]+(?:\\.[A-Za-z0-9-]+)?)((?:;[^:\\r\\n]*)?):([^\\r\\n]*)");
+    private static final Pattern VCARD_CN = Pattern.compile("(?i)(;CN=)(\"[^\"]*\"|[^;:]*)");
+
+    private String anonDirectoryText(String body) {
+        return regexReplace(body, VCARD_LINE, m -> {
+            String name = m.group(1);
+            String prop = name.contains(".") ? name.substring(name.indexOf('.') + 1) : name;
+            String params = m.group(2);
+            String value = m.group(3);
+            if (!params.isEmpty()) {
+                params = regexReplace(params, VCARD_CN, c -> {
+                    String cn = c.group(2);
+                    boolean q = cn.startsWith("\"") && cn.endsWith("\"") && cn.length() >= 2;
+                    String inner = q ? cn.substring(1, cn.length() - 1) : cn;
+                    if (inner.trim().isEmpty()) return c.group();
+                    String ph = map.placeholder(inner.trim(), "NAME");
+                    return c.group(1) + (q ? "\"" + ph + "\"" : ph);
+                });
+            }
+            String prefix = cfg.vcardProperties.get(prop.toUpperCase(Locale.ROOT));
+            String newValue;
+            if (prefix != null && !value.trim().isEmpty() && !value.replace(";", "").trim().isEmpty()) {
+                newValue = map.placeholder(value, prefix);
+            } else {
+                newValue = value; // il resto lo scansiona scanSecrets sul body intero
+            }
+            return name + params + ":" + newValue;
+        });
+    }
+
+    // --- UTF-16 (idea da rizzo-pii) ---
+    // Il caso peggiore non e' il testo illeggibile ma quello che a schermo sembra
+    // normale e ai rilevatori no: "m\0a\0r\0i\0o\0". Si decodifica, si anonimizza
+    // e si ricodifica uguale; la de-anonimizzazione fa il percorso inverso.
+
+    /** 0 = no, 1 = UTF-16LE (zero dopo il carattere), 2 = UTF-16BE (zero prima). */
+    static int utf16Kind(String s, int from, int len) {
+        if (len < 8) return 0;
+        int even = 0, odd = 0, pairs = len / 2;
+        for (int i = 0; i + 1 < len; i += 2) {
+            char a = s.charAt(from + i), b = s.charAt(from + i + 1);
+            if (a > 0xFF || b > 0xFF) return 0;
+            if (b == 0 && a != 0) odd++;
+            else if (a == 0 && b != 0) even++;
+        }
+        if (odd >= pairs * 0.6) return 1;
+        if (even >= pairs * 0.6) return 2;
+        return 0;
+    }
+
+    private String anonUtf16Body(String body, String contentType) {
+        int bom = 0;
+        if (body.length() >= 2 && ((body.charAt(0) == 0xFF && body.charAt(1) == 0xFE)
+                || (body.charAt(0) == 0xFE && body.charAt(1) == 0xFF))) bom = 2;
+        int kind = utf16Kind(body, bom, body.length() - bom);
+        if (kind == 0 || (body.length() - bom) % 2 != 0) return null;
+        String text = decodeUtf16(body.substring(bom), kind);
+        if (text == null) return null;
+        String ct = contentType == null ? "" : contentType.replaceAll("(?i);?\\s*charset=[^;]*", "");
+        String anon = anonymizeBody(text, ct);
+        return body.substring(0, bom) + encodeUtf16(anon, kind);
+    }
+
+    static String decodeUtf16(String latin, int kind) {
+        byte[] b = new byte[latin.length()];
+        for (int i = 0; i < b.length; i++) {
+            char c = latin.charAt(i);
+            if (c > 0xFF) return null;
+            b[i] = (byte) c;
+        }
+        return new String(b, kind == 1 ? StandardCharsets.UTF_16LE : StandardCharsets.UTF_16BE);
+    }
+
+    static String encodeUtf16(String s, int kind) {
+        byte[] b = s.getBytes(kind == 1 ? StandardCharsets.UTF_16LE : StandardCharsets.UTF_16BE);
+        return new String(b, StandardCharsets.ISO_8859_1);
+    }
+
+    // --- CSV / TSV (export di dati: tipico di un IDOR su /export.csv) ---
+    // L'intestazione dice cosa c'e' in ogni colonna: "cognome" rende sensibili
+    // tutte le celle sotto, come una chiave JSON. Separatori, virgolette e a capo
+    // originali restano identici.
+
+    private String anonDelimited(String body) {
+        int firstNl = body.indexOf('\n');
+        String head = firstNl < 0 ? body : body.substring(0, firstNl);
+        int tabs = count(head, '\t'), commas = count(head, ','), semis = count(head, ';');
+        char delim = tabs > 0 ? '\t' : (semis > commas ? ';' : ',');
+        if (count(head, delim) == 0) return null;
+        List<String> header = new ArrayList<>();
+        StringBuilder out = new StringBuilder(body.length() + 64);
+        int i = 0, n = body.length(), col = 0, row = 0;
+        while (true) {
+            // un campo: tra virgolette ("" come escape, a capo ammessi) oppure semplice
+            int start = i;
+            if (i < n && body.charAt(i) == '"') {
+                i++;
+                while (i < n) {
+                    if (body.charAt(i) == '"') {
+                        if (i + 1 < n && body.charAt(i + 1) == '"') { i += 2; continue; }
+                        i++;
+                        break;
+                    }
+                    i++;
+                }
+            }
+            while (i < n && body.charAt(i) != delim && body.charAt(i) != '\n' && body.charAt(i) != '\r') i++;
+            String raw = body.substring(start, i);
+            if (row == 0) {
+                header.add(unquoteCsv(raw));
+                out.append(raw);
+            } else {
+                out.append(anonCsvCell(raw, col < header.size() ? header.get(col) : null));
+            }
+            if (i >= n) break;
+            char c = body.charAt(i);
+            if (c == delim) {
+                out.append(c);
+                i++;
+                col++;
+            } else {
+                int e = i;
+                if (c == '\r' && e + 1 < n && body.charAt(e + 1) == '\n') e++;
+                out.append(body, i, e + 1);
+                i = e + 1;
+                col = 0;
+                row++;
+                if (i >= n) break;
+            }
+        }
+        return out.toString();
+    }
+
+    private static int count(String s, char c) {
+        int k = 0;
+        for (int i = 0; i < s.length(); i++) if (s.charAt(i) == c) k++;
+        return k;
+    }
+
+    private static String unquoteCsv(String raw) {
+        String r = raw.trim();
+        if (r.length() >= 2 && r.startsWith("\"") && r.endsWith("\"")) r = r.substring(1, r.length() - 1).replace("\"\"", "\"");
+        return r;
+    }
+
+    private String anonCsvCell(String raw, String column) {
+        if (raw.isEmpty()) return raw;
+        boolean quoted = raw.length() >= 2 && raw.startsWith("\"") && raw.endsWith("\"");
+        String inner = quoted ? raw.substring(1, raw.length() - 1) : raw;
+        if (inner.isEmpty()) return raw;
+        String prefix = column == null ? null : sensitiveKeyPrefix(column);
+        String done;
+        if (prefix != null && !skipValue(inner.trim())) {
+            String v = inner.trim();
+            int lead = inner.indexOf(v);
+            String ph = map.placeholder(v, prefix);
+            done = inner.substring(0, lead) + ph + inner.substring(lead + v.length());
+        } else {
+            done = scanValue(inner, column, 0);
+        }
+        return quoted ? "\"" + done + "\"" : done;
     }
 
     // --- JSON (riscrittura tollerante che preserva la formattazione) ---
@@ -851,6 +1574,8 @@ public final class Anonymizer {
         String q = closed ? "\"" : "";
         if (isPreservedKey(key)) return "\"" + raw + q;
         String prefix = valuePrefix(top);
+        // "name": "spring.datasource.password" e' il nome di una proprieta', non di una persona
+        if ("NAME".equals(prefix) && (looksLikePropertyName(v) || (introspection && GQL_IDENT.matcher(v).matches()))) prefix = null;
         if (prefix != null || strictId(key, v)) {
             if (v.isEmpty()) return "\"" + raw + q;
             String token = map.placeholder(v, prefix != null ? prefix : "ID");
@@ -869,6 +1594,20 @@ public final class Anonymizer {
         if (spliced != null) return "\"" + spliced + q;
         String nv = branch.apply(v);
         return "\"" + (nv.equals(v) ? raw : encodeJsonString(nv)) + q;
+    }
+
+    /** Dentro una risposta d'introspezione GraphQL (__schema / __type). */
+    private boolean introspection;
+    private static final Pattern GQL_IDENT = Pattern.compile("[_A-Za-z][_0-9A-Za-z]{0,100}");
+    private static final Pattern PROPERTY_NAME = Pattern.compile("[A-Za-z][A-Za-z0-9]*(?:[._-][A-Za-z0-9]+)+");
+
+    /** Identificativo con separatori che e' a sua volta una chiave sensibile o un percorso a.b.c. */
+    private boolean looksLikePropertyName(String v) {
+        if (v.length() > 128 || !PROPERTY_NAME.matcher(v).matches()) return false;
+        if (sensitiveKeyPrefix(v) != null || isHostKey(v)) return true;
+        int dots = 0;
+        for (int i = 0; i < v.length(); i++) if (v.charAt(i) == '.') dots++;
+        return dots >= 2;
     }
 
     private static boolean isGraphqlKey(String key) {
@@ -1106,9 +1845,11 @@ public final class Anonymizer {
         if (isPreservedKey(memberKey(top))) return tok;
         String prefix = valuePrefix(top);
         if (JSON_NUMBER.matcher(tok).matches()) {
-            if (prefix != null && !prefix.equals("USERNAME")) return "\"" + map.placeholder(tok, prefix) + "\"";
-            if (prefix == null && strictId(memberKey(top), tok)) return "\"" + map.placeholder(tok, "ID") + "\"";
-            if (!isIdKey(memberKey(top)) && validCard(tok)) return "\"" + map.placeholder(tok, "CARD") + "\"";
+            // segnaposto SENZA virgolette: un numero tra virgolette non tornerebbe
+            // identico con la de-anonimizzazione ("lat": GEO_1 -> "lat": 45.46)
+            if (prefix != null && !prefix.equals("USERNAME")) return map.placeholder(tok, prefix);
+            if (prefix == null && strictId(memberKey(top), tok)) return map.placeholder(tok, "ID");
+            if (!isIdKey(memberKey(top)) && validCard(tok)) return map.placeholder(tok, "CARD");
             return tok;
         }
         return prefix != null ? map.placeholder(tok, prefix) : scanSecrets(tok);
@@ -1118,10 +1859,30 @@ public final class Anonymizer {
     private String scanValue(String v, String key, int depth) {
         if (v == null || v.isEmpty()) return v;
         String t = v.trim();
+        if (isHostKey(key) && looksLikeInternalHost(t)) {
+            // "db_host": "srv-sql-prod01": nome di server interno senza TLD
+            int lead = v.indexOf(t);
+            return v.substring(0, lead) + anonHostValue(t) + v.substring(lead + t.length());
+        }
         if (depth < 6 && !t.isEmpty() && (t.charAt(0) == '{' || t.charAt(0) == '[') && looksLikeJsonDoc(t)) {
             return rewriteJson(v, depth + 1);
         }
+        if (isAttackPayload(t)) {
+            // payload del tester: niente mascheramento per chiave (Set-Cookie: ... in una
+            // CRLF injection), ma email, IP e segreti al suo interno si cercano comunque
+            return scanPayload(v);
+        }
         return scan(v, isIdKey(key));
+    }
+
+    private String scanPayload(String text) {
+        List<String> saved = new ArrayList<>();
+        String t = protect(text, DATA_URI, saved);
+        t = replaceUrlHosts(t);
+        t = applyPatterns(t, true);
+        t = replaceKnownValues(t);
+        t = replaceHostTokens(t, false, false);
+        return restore(t, saved);
     }
 
     private static String decodeJsonString(String raw) {
@@ -1351,6 +2112,21 @@ public final class Anonymizer {
         return sb.toString();
     }
 
+    /** Come protect, per qualunque pattern (protect e' specializzato sui data URI). */
+    private static String protectAll(String text, Pattern p, List<String> saved) {
+        Matcher m = p.matcher(text);
+        StringBuilder sb = new StringBuilder();
+        boolean any = false;
+        while (m.find()) {
+            any = true;
+            m.appendReplacement(sb, "\uE000" + saved.size() + "\uE001");
+            saved.add(m.group());
+        }
+        if (!any) return text;
+        m.appendTail(sb);
+        return sb.toString();
+    }
+
     private static String restore(String text, List<String> saved) {
         for (int i = 0; i < saved.size(); i++) {
             text = text.replace("\uE000" + i + "\uE001", saved.get(i));
@@ -1375,7 +2151,8 @@ public final class Anonymizer {
             char before = m.start() > 0 ? text.charAt(m.start() - 1) : '\0';
             boolean queryCtx = before == '?' || before == '&' || before == '#';
             String prefix = kvPrefix(m.group(2), queryCtx);
-            if (prefix == null) continue;
+            boolean hostKey = prefix == null && isHostKey(m.group(2));
+            if (prefix == null && !hostKey) continue;
             if (sep.equals(":") && text.startsWith("//", vs)) continue;
             int valStart, valEnd;
             char q = text.charAt(vs);
@@ -1422,9 +2199,28 @@ public final class Anonymizer {
             if (q != '"' && q != '\'' && m.group(2).indexOf('.') > 0 && CODE_REF.matcher(raw).matches()) {
                 continue;
             }
+            // il valore non deve inglobare un segnaposto gia' emesso ("CN=Mario Rossi:mailto:EMAIL_1"):
+            // la de-anonimizzazione e' a passata singola e non lo ricostruirebbe
+            Matcher inner = LITERAL_PLACEHOLDER.matcher(raw);
+            while (inner.find()) {
+                if (!map.isEmitted(inner.group())) continue;
+                String head = raw.substring(0, inner.start());
+                int cut = head.length();
+                for (char d : new char[]{':', ';', ',', '<', '(', '|'}) {
+                    int k = head.indexOf(d);
+                    if (k >= 0 && k < cut) cut = k;
+                }
+                raw = head.substring(0, cut).stripTrailing();
+                valEnd = valStart + raw.length();   // il resto (":mailto:EMAIL_1") resta com'e'
+                break;
+            }
+            if (raw.isEmpty()) continue;
             String repl;
             Matcher am = AUTH_SCHEME.matcher(raw);
-            if (am.matches()) repl = am.group(1) + " " + map.placeholder(am.group(2).trim(), prefix);
+            if (hostKey) {
+                if (!looksLikeInternalHost(raw.trim())) continue;
+                repl = anonHostValue(raw);
+            } else if (am.matches()) repl = am.group(1) + " " + map.placeholder(am.group(2).trim(), prefix);
             else repl = map.placeholder(raw, prefix);
             from = valEnd;
             if (repl.equals(raw)) continue;
@@ -1499,11 +2295,69 @@ public final class Anonymizer {
     }
 
     private String applyPatternsRaw(String text, boolean limited) {
+        text = maskPrintedIbans(text);
         for (PatternDef pat : cfg.patterns) {
             if (limited && isLimitedSkip(pat)) continue;
             text = applyOnePattern(text, pat);
         }
         return text;
+    }
+
+    // ---- IBAN nel formato di stampa (idea e tabella da rizzo-pii, ISO 13616) ----
+    // Dove finisce un IBAN a gruppi non si deduce dalla forma: senza la lunghezza
+    // attesa per il paese o si inghiotte la parola dopo o si lascia in chiaro la coda.
+    private static final Map<String, Integer> IBAN_LEN = new java.util.HashMap<>();
+    static {
+        for (String c : ("AD24 AE23 AL28 AT20 AZ28 BA20 BE16 BG22 BH22 BI27 BR29 BY28 CH21 CR22 CY28 CZ24 "
+                + "DE22 DJ27 DK18 DO28 EE20 EG29 ES24 FI18 FK18 FO18 FR27 GB22 GE22 GI23 GL18 GR27 "
+                + "GT28 HN28 HR21 HU28 IE22 IL23 IQ23 IS26 IT27 JO30 KW30 KZ20 LB28 LC32 LI21 LT20 "
+                + "LU20 LV21 LY25 MC27 MD24 ME22 MK19 MN20 MR27 MT31 MU30 NI28 NL18 NO15 OM23 PK24 "
+                + "PL28 PS29 PT25 QA29 RO24 RS22 RU33 SA24 SC31 SD18 SE24 SI19 SK24 SM27 SO23 ST25 "
+                + "SV28 TL23 TN24 TR26 UA29 VA22 VG24 XK20 YE30").split(" ")) {
+            IBAN_LEN.put(c.substring(0, 2), Integer.parseInt(c.substring(2)));
+        }
+    }
+    private static final Pattern IBAN_HEAD = Pattern.compile("(?<![A-Za-z0-9])[A-Za-z]{2}\\d{2}");
+
+    private String maskPrintedIbans(String text) {
+        if (text.length() < 15) return text;
+        Matcher h = IBAN_HEAD.matcher(text);
+        StringBuilder out = null;
+        int last = 0, from = 0;
+        while (from < text.length() && h.find(from)) {
+            int start = h.start();
+            Integer n = IBAN_LEN.get(text.substring(start, start + 2).toUpperCase(Locale.ROOT));
+            from = h.end();
+            if (n == null) continue;
+            int i = start, got = 0, sep = 0, run = 0, newlines = 0;
+            boolean grouped = false;
+            while (i < text.length() && got < n) {
+                char c = text.charAt(i);
+                if (c < 128 && Character.isLetterOrDigit(c)) {
+                    got++;
+                    run++;
+                    sep = 0;
+                } else if (sep < 3 && run <= 5 && (c == ' ' || c == '\t' || c == '.' || c == '-' || c == '\r' || c == '\n')) {
+                    if (c == '\n' && ++newlines > 1) break;  // va a capo una volta, non a ogni cella
+                    sep++;
+                    run = 0;
+                    grouped = true;
+                } else {
+                    break;
+                }
+                i++;
+            }
+            if (got < n || !grouped) continue;               // le forme compatte le fa il pattern
+            if (i < text.length() && text.charAt(i) < 128 && Character.isLetterOrDigit(text.charAt(i))) continue;
+            String cand = text.substring(start, i);
+            if (map.looksLikePlaceholder(cand) || !validIban(cand.replaceAll("[\\s.\\-]", ""))) continue;
+            if (out == null) out = new StringBuilder(text.length());
+            out.append(text, last, start).append(map.placeholder(cand, "IBAN"));
+            last = i;
+            from = i;
+        }
+        if (out == null) return text;
+        return out.append(text, last, text.length()).toString();
     }
 
     private static boolean isGeneric(PatternDef pat) {
@@ -1513,7 +2367,7 @@ public final class Anonymizer {
 
     private static boolean isLimitedSkip(PatternDef pat) {
         return isGeneric(pat) || "card".equals(pat.validate) || "luhn".equals(pat.validate)
-                || "phone".equals(pat.validate);
+                || "phone".equals(pat.validate) || "piva".equals(pat.validate) || "plate".equals(pat.validate);
     }
 
     private static boolean isUrlChar(char c) {
@@ -1603,6 +2457,69 @@ public final class Anonymizer {
             case "hex": return validHex(whole);
             case "b64": return validB64(whole);
             case "b64secret": return validB64Secret(whole);
+            case "cf": return plausibleCodiceFiscale(whole);
+            case "piva": return validPartitaIva(whole);
+            case "plate": return !map.looksLikePlaceholder(whole);
+            default: return true;
+        }
+    }
+
+    private static final int[] CF_ODD_VAL = {1, 0, 5, 7, 9, 13, 15, 17, 19, 21, 2, 4, 18, 20, 11, 3, 6, 8, 12, 14, 16,
+            10, 22, 25, 24, 23};
+
+    /**
+     * Codice fiscale, anche omocodico (cifre sostituite da LMNPQRSTUV): carattere
+     * di controllo corretto, oppure abbastanza cifre da non essere una parola.
+     * Algoritmo ufficiale (stesso approccio "redigi comunque se la forma e'
+     * specifica" di rizzo-pii: meglio nascondere un CF con un refuso).
+     */
+    static boolean plausibleCodiceFiscale(String s) {
+        String c = s.toUpperCase(Locale.ROOT);
+        if (c.length() != 16) return false;
+        int sum = 0;
+        for (int i = 0; i < 15; i++) {
+            char ch = c.charAt(i);
+            int v;
+            if (i % 2 == 0) { // posizioni dispari (1-based)
+                int idx = Character.isDigit(ch) ? ch - '0' : ch - 'A';
+                if (idx < 0 || idx > 25) return false;
+                v = CF_ODD_VAL[idx];
+            } else {
+                v = Character.isDigit(ch) ? ch - '0' : ch - 'A';
+            }
+            sum += v;
+        }
+        if ((char) ('A' + sum % 26) == c.charAt(15)) return true;
+        int digits = 0;
+        for (int i = 0; i < 16; i++) if (Character.isDigit(c.charAt(i))) digits++;
+        return digits >= 4;
+    }
+
+    /** Partita IVA: algoritmo ufficiale del carattere di controllo (stesso di rizzo-pii). */
+    static boolean validPartitaIva(String s) {
+        String d = s.replaceAll("\\D", "");
+        if (d.length() != 11 || d.chars().allMatch(c -> c == '0')) return false;
+        int sum = 0;
+        for (int i = 0; i < 10; i++) {
+            int n = d.charAt(i) - '0';
+            if (i % 2 == 1) {
+                n *= 2;
+                if (n > 9) n -= 9;
+            }
+            sum += n;
+        }
+        return (10 - sum % 10) % 10 == d.charAt(10) - '0';
+    }
+
+    /** Validazioni sul solo valore (la parte dopo il gruppo conservato). */
+    private boolean validatesSecret(PatternDef pat, String secret) {
+        if (pat.validate == null || secret.isEmpty()) return true;
+        switch (pat.validate) {
+            case "username": return plausibleUsername(secret);
+            case "aduser": return plausibleAdUser(secret);
+            case "personname": return plausiblePersonName(secret);
+            case "hostname": return secret.length() >= 3 && !map.looksLikePlaceholder(secret);
+            case "pathtoken": return plausiblePathToken(secret);
             default: return true;
         }
     }
@@ -1618,6 +2535,10 @@ public final class Anonymizer {
                 if (whole.isEmpty() || map.looksLikePlaceholder(whole)) continue;
                 if (generic && UUID.matcher(whole).matches()) continue;
                 int end = m.end();
+                if (pat.keepGroup != null && m.groupCount() >= pat.keepGroup && m.group(pat.keepGroup) != null
+                        && !validatesSecret(pat, whole.substring(m.end(pat.keepGroup) - m.start()).strip())) {
+                    continue;
+                }
                 if (!validates(pat, whole)) {
                     if (!"iban".equals(pat.validate)) continue;
                     // IBAN seguito da altro testo: riprova accorciando dai gruppi finali
@@ -1639,10 +2560,11 @@ public final class Anonymizer {
                     String secret = rest.stripLeading();
                     if (secret.isEmpty() || map.looksLikePlaceholder(secret)) continue;
                     String ws = rest.substring(0, rest.length() - secret.length());
-                    if (ws.isEmpty() && !Character.isWhitespace(scheme.charAt(scheme.length() - 1))) ws = " ";
+                    // "Bearer" + segreto attaccato: separa; "/users/", "\\" e simili restano attaccati
+                    if (ws.isEmpty() && Character.isLetterOrDigit(scheme.charAt(scheme.length() - 1))) ws = " ";
                     replacement = scheme + ws + map.placeholder(secret, pat.prefix);
                 } else {
-                    replacement = map.placeholder(whole, pat.prefix);
+                    replacement = "JWT".equals(pat.prefix) ? maskJwt(whole, "JWT") : map.placeholder(whole, pat.prefix);
                 }
                 if (replacement.equals(whole)) continue;
                 if (sb == null) sb = new StringBuilder(text.length() + 16);
@@ -1681,7 +2603,7 @@ public final class Anonymizer {
         for (int i = 0; i < s.length(); i++) {
             char c = s.charAt(i);
             if (Character.isDigit(c)) sb.append(c);
-            else if (c != ' ' && c != '-') return false;
+            else if (c != ' ' && c != '-' && c != '.') return false; // anche 4111.1111.1111.1111
         }
         String d = sb.toString();
         int len = d.length();
@@ -1817,6 +2739,120 @@ public final class Anonymizer {
     }
 
     // ------------------------------------------------------ Transfer chunked
+    /**
+     * Body chunked scomposto senza perdere nulla: righe di dimensione originali,
+     * dati, separatori, chunk finale con eventuali trailer e soprattutto quello che
+     * segue il chunk finale (in una request smuggling e' la richiesta contrabbandata).
+     */
+    private static final class Chunked {
+        final List<String[]> chunks = new ArrayList<>(); // {riga dimensione, dati, separatore}
+        String last = "";  // "0" + trailer + riga vuota
+        String tail = "";  // dati dopo il chunk finale
+
+        String data() {
+            StringBuilder sb = new StringBuilder();
+            for (String[] c : chunks) sb.append(c[1]);
+            return sb.toString();
+        }
+
+        static Chunked parse(String body) {
+            if (body == null || body.isEmpty()) return null;
+            byte[] b = body.getBytes(StandardCharsets.UTF_8);
+            Chunked c = new Chunked();
+            int i = 0, n = b.length;
+            while (i < n) {
+                int j = indexOfByte(b, (byte) '\n', i);
+                if (j < 0) return null;
+                int lineEnd = (j > i && b[j - 1] == '\r') ? j - 1 : j;
+                String token = new String(b, i, lineEnd - i, StandardCharsets.ISO_8859_1).split(";", 2)[0].trim();
+                if (!token.matches("[0-9A-Fa-f]{1,15}")) return null;
+                long size;
+                try { size = Long.parseLong(token, 16); } catch (Exception e) { return null; }
+                if (size == 0) {
+                    // chunk finale + trailer fino alla riga vuota
+                    int k = j + 1;
+                    while (k < n) {
+                        int e = indexOfByte(b, (byte) '\n', k);
+                        if (e < 0) { k = n; break; }
+                        boolean empty = e == k || (e == k + 1 && b[k] == '\r');
+                        k = e + 1;
+                        if (empty) break;
+                    }
+                    c.last = new String(b, i, k - i, StandardCharsets.UTF_8);
+                    c.tail = new String(b, k, n - k, StandardCharsets.UTF_8);
+                    break;
+                }
+                int ds = j + 1;
+                if (size > n - ds) return null;
+                int de = ds + (int) size;
+                int se = de;
+                if (se + 1 < n && b[se] == '\r' && b[se + 1] == '\n') se += 2;
+                else if (se < n && b[se] == '\n') se += 1;
+                c.chunks.add(new String[]{new String(b, i, ds - i, StandardCharsets.UTF_8),
+                        new String(b, ds, de - ds, StandardCharsets.UTF_8),
+                        new String(b, de, se - de, StandardCharsets.UTF_8)});
+                i = se;
+            }
+            if (c.chunks.isEmpty() && c.last.isEmpty()) return null;
+            // un confine di chunk dentro un carattere multibyte non si puo' ricomporre: rinuncia
+            StringBuilder all = new StringBuilder();
+            for (String[] ch : c.chunks) all.append(ch[0]).append(ch[1]).append(ch[2]);
+            all.append(c.last).append(c.tail);
+            return all.toString().equals(body) ? c : null;
+        }
+    }
+
+    /**
+     * Rimette il body anonimizzato nel framing ORIGINALE (stesse righe di
+     * dimensione, come per Content-Length): la de-anonimizzazione ricostruisce
+     * il messaggio byte per byte. Con piu' chunk ogni pezzo si anonimizza da solo
+     * e si accetta il risultato solo se e' identico all'anonimizzazione del body
+     * intero (cosi' un segreto a cavallo di due chunk non puo' sfuggire);
+     * altrimenti un unico chunk.
+     */
+    private String reframe(Chunked f, String anonBody, String ct, String nl) {
+        String last = f.last.isEmpty() ? "" : scanSecrets(f.last);
+        String tail = f.tail.isEmpty() ? "" : anonymizeTail(f.tail);
+        if (f.chunks.size() == 1) {
+            String[] c = f.chunks.get(0);
+            return c[0] + anonBody + c[2] + last + tail;
+        }
+        if (f.chunks.size() > 1 && f.chunks.size() <= 512) {
+            SubstitutionMap snap = map.snapshot();
+            List<String> knownSnap = new ArrayList<>(knownValues);
+            int scannedSnap = knownScanned;
+            Pattern reSnap = knownValuesRe;
+            StringBuilder parts = new StringBuilder(), framed = new StringBuilder();
+            try {
+                for (String[] c : f.chunks) {
+                    String a = anonymizeBody(c[1], ct);
+                    parts.append(a);
+                    framed.append(c[0]).append(a).append(c[2]);
+                }
+            } catch (RuntimeException e) {
+                parts.setLength(0);
+            }
+            if (parts.toString().equals(anonBody)) return framed + last + tail;
+            map.restore(snap);
+            knownValues.clear();
+            knownValues.addAll(knownSnap);
+            knownScanned = scannedSnap;
+            knownValuesRe = reSnap;
+        }
+        String one = rechunk(anonBody, nl);
+        return (f.chunks.isEmpty() ? (last.isEmpty() ? one : last) : one) + tail;
+    }
+
+    /** Dati dopo il chunk finale (request smuggling): spesso un'altra richiesta HTTP. */
+    private String anonymizeTail(String tail) {
+        try {
+            if (tail.trim().isEmpty()) return tail;
+            String s = anonymizeStructured(tail);
+            if (Anonymizer.deanonymize(s, map.reverseMap()).equals(tail)) return s;
+        } catch (RuntimeException ignored) {
+        }
+        return scanSecrets(tail);
+    }
     /** Ri-assembla un body chunked (in OTTETTI, corretto anche con multibyte). */
     private static String dechunk(String body) {
         if (body == null || body.isEmpty()) return null;
@@ -2174,27 +3210,470 @@ public final class Anonymizer {
         return s != null ? s : raw;
     }
 
+    // ------------------------------------------- identita' del cliente e contesto
+    //
+    // Un pentester non deve mai far uscire il nome del cliente ne' la topologia
+    // interna. Il dominio diventa HOST_n, ma il suo nome base ("acme-corp") compare
+    // anche in path, header custom, package Java, testo libero. L'ultima passata
+    // lavora sull'intero messaggio gia' anonimizzato e sostituisce ovunque:
+    //  - il nome dell'organizzazione (dall'header Host e dai termini dell'utente) -> ORG_n
+    //  - host, nomi e username gia' scoperti altrove, rimasti in chiaro per l'ordine
+    //    di elaborazione (es. path della start line elaborato prima dell'header Host)
+    //  - password nei commenti HTML / JS ("admin / Adm1nPwd!")
+    //
+    // Le liste che seguono (servizi terzi, suffissi pubblici, chiavi di host, parole
+    // che non sono nomi...) stanno nella sezione "context" di sensitive_patterns.json.
+
+    /** Nome base dell'organizzazione da un host ("app.acme-corp.co.uk:443" -> "acme-corp"). */
+    String orgLabel(String hostValue) {
+        if (hostValue == null) return null;
+        String h = hostValue.trim().toLowerCase(Locale.ROOT);
+        if (h.isEmpty() || h.startsWith("[")) return null;
+        int colon = h.indexOf(':');
+        if (colon >= 0) h = h.substring(0, colon);
+        while (h.endsWith(".")) h = h.substring(0, h.length() - 1);
+        if (isIp(h)) return null;
+        String[] labels = h.split("\\.");
+        if (labels.length < 2) return null;
+        int n = labels.length;
+        String label = (n >= 3 && cfg.twoLevelSuffixes.contains(labels[n - 2] + "." + labels[n - 1]))
+                ? labels[n - 3] : labels[n - 2];
+        if (!label.matches("[a-z0-9][a-z0-9-]{1,62}") || label.chars().allMatch(Character::isDigit)) return null;
+        if (cfg.orgStop.contains(label)) return null;
+        // nomi corti senza trattini/cifre sono spesso parole comuni ("data", "poste"):
+        // si possono aggiungere a mano come termini del cliente
+        boolean marked = label.indexOf('-') >= 0 || label.chars().anyMatch(Character::isDigit);
+        if (label.length() < cfg.orgMinLength && !marked) return null;
+        return label;
+    }
+
+    /** Forme con cui un nome compare nel testo: "acme-corp" -> acme-corp, acmecorp, acme_corp, acme corp, acme.corp. */
+    static List<String> orgVariants(String term) {
+        List<String> out = new ArrayList<>();
+        if (term == null) return out;
+        String t = term.trim().toLowerCase(Locale.ROOT);
+        if (t.length() < 3) return out;
+        out.add(t);
+        String[] words = t.split("[\\s._-]+");
+        List<String> w = new ArrayList<>();
+        for (String s : words) if (!s.isEmpty()) w.add(s);
+        if (w.size() > 1 && w.size() <= 6) {
+            for (String sep : new String[]{"", "-", "_", " ", "."}) {
+                String v = String.join(sep, w);
+                if (v.length() >= 4 && !out.contains(v)) out.add(v);
+            }
+        }
+        return out;
+    }
+
+    private static final Set<String> CONTEXT_TYPES = Set.of("HOST", "ORG", "NAME", "USERNAME");
+
+    /** Ultima passata sull'intero messaggio (vedi sopra). Reversibile come le altre. */
+    private String contextPass(String text) {
+        if (text == null || text.isEmpty()) return text;
+        text = maskCommentCredentials(text);
+        text = maskNamedValues(text);
+        Map<String, String> terms = new java.util.LinkedHashMap<>();
+        for (String t : ov.orgTerms) for (String v : orgVariants(t)) terms.putIfAbsent(v, "ORG");
+        for (String t : map.orgTerms()) for (String v : orgVariants(t)) terms.putIfAbsent(v, "ORG");
+        for (SubstitutionMap.Entry e : map.entries()) {
+            if (!CONTEXT_TYPES.contains(e.type)) continue;
+            String o = e.original;
+            if (o == null || o.length() > 200 || map.looksLikePlaceholder(o)) continue;
+            boolean plain = o.matches("[\\p{L}0-9][\\p{L}0-9 ._@'-]*[\\p{L}0-9]");
+            if (!plain) continue;
+            switch (e.type) {
+                case "HOST":
+                    if (o.length() >= 4 && !isIp(o)) terms.putIfAbsent(o.toLowerCase(Locale.ROOT), "HOST");
+                    break;
+                case "ORG":
+                    if (o.length() >= 3) terms.putIfAbsent(o.toLowerCase(Locale.ROOT), "ORG");
+                    break;
+                case "NAME":
+                    // nome e cognome: un nome di battesimo da solo e' troppo comune
+                    if (o.length() >= 6 && o.indexOf(' ') > 0) {
+                        terms.putIfAbsent(o.toLowerCase(Locale.ROOT).replaceAll("\\s+", " "), "NAME");
+                    }
+                    break;
+                default: // USERNAME: solo forme distintive (m.rossi, mrossi85, m_rossi)
+                    if (o.length() >= 5 && o.matches(".*[._0-9].*") && o.indexOf(' ') < 0) {
+                        terms.putIfAbsent(o.toLowerCase(Locale.ROOT), "USERNAME");
+                    }
+            }
+        }
+        if (terms.isEmpty()) return text;
+        // indice per prima parola: scansione lineare anche con migliaia di host noti
+        // (una regex con migliaia di alternative diventa quadratica)
+        Map<String, List<String>> byFirstWord = new java.util.HashMap<>();
+        for (String t : terms.keySet()) {
+            String fw = firstWord(t, 0);
+            if (fw.isEmpty()) continue;
+            byFirstWord.computeIfAbsent(fw, k -> new ArrayList<>()).add(t);
+        }
+        for (List<String> l : byFirstWord.values()) l.sort((a, b) -> Integer.compare(b.length(), a.length()));
+        StringBuilder out = null;
+        int n = text.length(), i = 0, last = 0;
+        while (i < n) {
+            char c = text.charAt(i);
+            // stessi confini della de-anonimizzazione: ORG_1 deve tornare indietro esatto
+            if (!Character.isLetterOrDigit(c) || (i > 0 && isWordBoundaryChar(text.charAt(i - 1)))) { i++; continue; }
+            String fw = firstWord(text, i);
+            List<String> cands = byFirstWord.get(fw);
+            String hit = null;
+            int hitEnd = -1;
+            if (cands != null) {
+                for (String t : cands) {
+                    int e = matchFlexible(text, i, t);
+                    if (e > 0 && (e == n || !isWordBoundaryChar(text.charAt(e)))) { hit = t; hitEnd = e; break; }
+                }
+            }
+            if (hit == null) { i += Math.max(1, fw.length()); continue; }
+            String surface = text.substring(i, hitEnd);
+            String repl = exactPlaceholder(surface, terms.get(hit));
+            boolean underscoreBefore = i > 0 && text.charAt(i - 1) == '_';
+            boolean underscoreAfter = hitEnd < n && text.charAt(hitEnd) == '_';
+            if ((underscoreBefore || underscoreAfter) && !repl.equals(surface)) {
+                // "acmecorp_sid", "db_acmecorp": l'underscore lega la parola, quindi un
+                // segnaposto a meta' non tornerebbe indietro (confine \\w). Si sostituisce
+                // la parola intera con una variante della stessa radice: ORG_1_W.
+                int ws = i, we = hitEnd;
+                while (ws > 0 && isIdentChar(text.charAt(ws - 1))) ws--;
+                while (we < n && isIdentChar(text.charAt(we))) we++;
+                if (ws < last) { i = hitEnd; continue; }
+                String word = text.substring(ws, we);
+                if (map.looksLikePlaceholder(word) || LITERAL_PLACEHOLDER.matcher(word).find()) { i = hitEnd; continue; }
+                String wph = map.variant(repl, word, "W");
+                if (out == null) out = new StringBuilder(n + 32);
+                out.append(text, last, ws).append(wph);
+                last = we;
+                i = we;
+                continue;
+            }
+            if (!repl.equals(surface)) {
+                if (out == null) out = new StringBuilder(n + 32);
+                out.append(text, last, i).append(repl);
+                last = hitEnd;
+            }
+            i = hitEnd;
+        }
+        if (out == null) return text;
+        out.append(text, last, n);
+        return out.toString();
+    }
+
+    /**
+     * Confine di parola per i termini di contesto: solo lettere e cifre ASCII, cosi'
+     * il nome del cliente si trova anche in "acmecorp_sid" (vedi la variante _W).
+     */
+    /**
+     * Confronto senza maiuscole in cui uno spazio del termine vale una sequenza di
+     * spazi/tab del testo ("mario  rossi", "Mario\tRossi"). Fine del match o -1.
+     */
+    private static int matchFlexible(String text, int from, String term) {
+        int i = from, j = 0, n = text.length();
+        while (j < term.length()) {
+            char tc = term.charAt(j);
+            if (tc == ' ') {
+                int k = i;
+                while (k < n && (text.charAt(k) == ' ' || text.charAt(k) == '\t')) k++;
+                if (k == i) return -1;
+                i = k;
+                j++;
+                continue;
+            }
+            if (i >= n) return -1;
+            char c = text.charAt(i);
+            if (c != tc && Character.toLowerCase(c) != Character.toLowerCase(tc)
+                    && Character.toUpperCase(c) != Character.toUpperCase(tc)) return -1;
+            i++;
+            j++;
+        }
+        return i;
+    }
+
+    private static boolean isWordBoundaryChar(char c) {
+        return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9');
+    }
+
+    private static boolean isIdentChar(char c) {
+        return isWordBoundaryChar(c) || c == '_';
+    }
+
+    /** Prima parola (lettere/cifre) a partire da from, in minuscolo. */
+    private static String firstWord(String s, int from) {
+        int j = from;
+        while (j < s.length() && Character.isLetterOrDigit(s.charAt(j))) j++;
+        return s.substring(from, j).toLowerCase(Locale.ROOT);
+    }
+
+    /** Placeholder per una forma precisa: stessa radice, variante _ALT se la grafia differisce. */
+    private String exactPlaceholder(String surface, String prefix) {
+        String ph = map.placeholder(surface, prefix);
+        if (ph == null || ph.equals(surface)) return surface; // escluso dall'utente
+        String orig = map.originalOf(ph);
+        if (orig != null && !orig.equals(surface)) ph = map.variant(ph, surface, "ALT");
+        return ph;
+    }
+
+    // --- coppie nome/valore in campi separati (Spring Actuator /env, liste di
+    //     impostazioni, header serializzati): il nome sensibile sta in "name", il
+    //     segreto in "value" ---
+    private static final String NV_NAME = "(?:name|key|property|propertyName|param|parameter|field|header|setting|variable|var|label|id)";
+    private static final String NV_VALUE = "(?:value|val|data|content|secret|text)";
+    private static final Pattern NV_NAME_FIRST = Pattern.compile(
+            "(\"" + NV_NAME + "\"\\s*:\\s*\")([^\"\\\\]{1,200})(\"\\s*,\\s*\"" + NV_VALUE + "\"\\s*:\\s*\")([^\"\\\\]{0,4000}(?:\\\\.[^\"\\\\]{0,4000}){0,20})(\")");
+    private static final Pattern NV_VALUE_FIRST = Pattern.compile(
+            "(\"" + NV_VALUE + "\"\\s*:\\s*\")([^\"\\\\]{0,4000}(?:\\\\.[^\"\\\\]{0,4000}){0,20})(\"\\s*,\\s*\"" + NV_NAME + "\"\\s*:\\s*\")([^\"\\\\]{1,200})(\")");
+
+    private String maskNamedValues(String text) {
+        if (text.indexOf('"') < 0) return text;
+        text = regexReplace(text, NV_NAME_FIRST, m -> {
+            String v = namedValue(m.group(2), m.group(4));
+            return v == null ? m.group() : m.group(1) + m.group(2) + m.group(3) + v + m.group(5);
+        });
+        return regexReplace(text, NV_VALUE_FIRST, m -> {
+            String v = namedValue(m.group(4), m.group(2));
+            return v == null ? m.group() : m.group(1) + v + m.group(3) + m.group(4) + m.group(5);
+        });
+    }
+
+    /** Placeholder per il valore se il nome accanto e' sensibile, altrimenti null. */
+    private String namedValue(String name, String value) {
+        if (value.isEmpty() || skipValue(value) || map.looksLikePlaceholder(value) || isPreservedKey(name)) return null;
+        if (value.chars().allMatch(c -> c == '*')) return null; // gia' mascherato dal server ("******")
+        String prefix = sensitiveKeyPrefix(name);
+        if (prefix == null && isHostKey(name) && looksLikeInternalHost(value)) prefix = "HOST";
+        if (prefix == null) return null;
+        String ph = map.placeholder(value, prefix);
+        return ph.equals(value) ? null : ph;
+    }
+
+    private static final Pattern HTML_COMMENT = Pattern.compile("<!--([\\s\\S]{0,8000}?)-->");
+    private static final Pattern BLOCK_COMMENT = Pattern.compile("/\\*([\\s\\S]{0,8000}?)\\*/");
+    /** "utente / password", "utente:password", "utente | password" dentro un commento. */
+    private static final Pattern COMMENT_PAIR = Pattern.compile(
+            "(?<![\\w@.-])([A-Za-z][\\w.@-]{1,40})([ \\t]*[/:|][ \\t]*)([^\\s<>\"'`]{6,64})");
+
+    /** Password lasciate nei commenti (HTML e /* *\/): il valore diventa SECRET_n. */
+    private String maskCommentCredentials(String text) {
+        if (text.indexOf("<!--") < 0 && text.indexOf("/*") < 0) return text;
+        java.util.function.Function<Matcher, String> inComment = cm -> {
+            String body = cm.group(1);
+            boolean hint = hasCredentialHint(body);
+            String nb = regexReplace(body, COMMENT_PAIR, pm -> {
+                String user = pm.group(1), secret = pm.group(3);
+                if (!hint && !cfg.commonUsers.contains(user.toLowerCase(Locale.ROOT))) return pm.group();
+                if (secret.contains("://") || secret.startsWith("/") || map.looksLikePlaceholder(secret)
+                        || charClasses(secret) < 3) return pm.group();
+                String ph = map.placeholder(secret, "SECRET");
+                return ph.equals(secret) ? pm.group() : user + pm.group(2) + ph;
+            });
+            if (nb.equals(body)) return cm.group();
+            String whole = cm.group();
+            int bs = cm.start(1) - cm.start();
+            return whole.substring(0, bs) + nb + whole.substring(bs + body.length());
+        };
+        text = regexReplace(text, HTML_COMMENT, inComment::apply);
+        text = regexReplace(text, BLOCK_COMMENT, inComment::apply);
+        return text;
+    }
+
+    private boolean hasCredentialHint(String body) {
+        String low = body.toLowerCase(Locale.ROOT);
+        for (String h : cfg.credentialHints) if (low.contains(h)) return true;
+        return false;
+    }
+
+    private static int charClasses(String s) {
+        boolean lo = false, up = false, di = false, sy = false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (Character.isLowerCase(c)) lo = true;
+            else if (Character.isUpperCase(c)) up = true;
+            else if (Character.isDigit(c)) di = true;
+            else sy = true;
+        }
+        return (lo ? 1 : 0) + (up ? 1 : 0) + (di ? 1 : 0) + (sy ? 1 : 0);
+    }
+
+    // --- hostname interni riconosciuti dalla chiave ("db_host": "srv-sql-prod01") ---
+        private static final Pattern HOSTISH = Pattern.compile(
+            "[A-Za-z0-9][A-Za-z0-9-]{0,62}(?:\\.[A-Za-z0-9-]{1,63}){0,8}(?::\\d{1,5})?");
+    private static final Pattern VERSIONISH = Pattern.compile("v?\\d+(?:\\.\\d+){0,4}(?:-[A-Za-z0-9.]+)?");
+
+    private boolean isHostKey(String key) {
+        if (key == null || key.isEmpty() || key.length() > 64) return false;
+        String k = key;
+        int dot = k.lastIndexOf('.');
+        if (dot >= 0 && dot < k.length() - 1) k = k.substring(dot + 1);
+        String norm = normKey(k);
+        if (cfg.hostKeys.contains(norm)) return true;
+        if (norm.endsWith("hostname") || norm.endsWith("servername")) return true;
+        if (norm.length() > 4 && norm.endsWith("host") && !norm.endsWith("ghost") && !norm.endsWith("localhost")) return true;
+        return norm.length() > 6 && norm.endsWith("server") && !norm.startsWith("webserver") && !norm.endsWith("observer");
+    }
+
+    /** Valore con la forma di un nome di macchina (cifre, trattini o punti: "srv-sql-prod01", "db01"). */
+    private boolean looksLikeInternalHost(String v) {
+        if (v == null || v.length() < 3 || v.length() > 253) return false;
+        if (!HOSTISH.matcher(v).matches() || map.looksLikePlaceholder(v)) return false;
+        String bare = v.indexOf(':') >= 0 ? v.substring(0, v.indexOf(':')) : v;
+        if (isIp(bare)) return true;
+        if (VERSIONISH.matcher(bare).matches() || bare.chars().allMatch(Character::isDigit)) return false;
+        if (bare.equalsIgnoreCase("localhost")) return false;
+        return bare.indexOf('-') >= 0 || bare.indexOf('.') >= 0 || bare.chars().anyMatch(Character::isDigit);
+    }
+
+    // --- validazioni dei nuovi pattern di contesto ---
+    private boolean plausibleUsername(String s) {
+        if (s.length() < 2 || s.length() > 64 || map.looksLikePlaceholder(s)) return false;
+        if (cfg.notUsernames.contains(s.toLowerCase(Locale.ROOT))) return false;
+        if (s.chars().allMatch(c -> Character.isDigit(c) || c == '-')) return false; // id numerico
+        return !UUID.matcher(s).matches();
+    }
+
+    /** DOMINIO + backslash + utente: l'utente non deve sembrare una sequenza di escape ("ERROR\nfoo"). */
+    private boolean plausibleAdUser(String s) {
+        if (!plausibleUsername(s)) return false;
+        boolean distinctive = s.indexOf('.') > 0 || s.indexOf('_') > 0 || s.chars().anyMatch(Character::isDigit);
+        return distinctive || "ntrbfuxv0".indexOf(Character.toLowerCase(s.charAt(0))) < 0;
+    }
+
+    private boolean plausiblePersonName(String s) {
+        String first = s.split("[ \\t]+")[0].toLowerCase(Locale.ROOT);
+        return !cfg.notNames.contains(first);
+    }
+
+    private boolean plausiblePathToken(String s) {
+        if (map.looksLikePlaceholder(s)) return false;
+        boolean digit = false, letter = false;
+        for (int i = 0; i < s.length(); i++) {
+            char c = s.charAt(i);
+            if (Character.isDigit(c)) digit = true;
+            else if (Character.isLetter(c)) letter = true;
+        }
+        return digit && letter;
+    }
+
     // -------------------------------------------------- de-anonimizzazione
+
+    /** Esito della de-anonimizzazione con la diagnostica sui segnaposto toccati dall'LLM. */
+    public static final class DeanonResult {
+        public final String text;
+        /** Segnaposto sostituiti con il valore reale. */
+        public final int replaced;
+        /** Di cui scritti con l'underscore escapato da markdown ("HOST\_1"). */
+        public final int unescaped;
+        /** Segnaposto che non esistono nella mappa (inventati o di un'altra sessione): restano cosi'. */
+        public final List<String> unknown;
+        /** Segnaposto modificati dall'LLM (maiuscole, suffissi): NON sostituiti, da controllare. */
+        public final List<String> altered;
+
+        DeanonResult(String text, int replaced, int unescaped, List<String> unknown, List<String> altered) {
+            this.text = text;
+            this.replaced = replaced;
+            this.unescaped = unescaped;
+            this.unknown = unknown;
+            this.altered = altered;
+        }
+    }
+
     public static String deanonymize(String text, Map<String, String> reverse) {
-        if (text == null || text.isEmpty() || reverse == null || reverse.isEmpty()) return text;
+        return deanonymizeReport(text, reverse).text;
+    }
+
+    private static final Pattern PH_SHAPE_LOOSE = Pattern.compile(
+            "(?<![A-Za-z0-9_])([A-Za-z][A-Za-z0-9]{0,40}(?:\\\\?_[A-Za-z][A-Za-z0-9]{0,40}){0,8})\\\\?_(\\d{1,9})([A-Za-z0-9_]{0,40})");
+    private static final Pattern PH_ROOT = Pattern.compile("^([A-Z][A-Z0-9]*(?:_[A-Z][A-Z0-9]*)*?)_\\d{1,9}(?:_.*)?$");
+
+    private static final Pattern UTF16LE_RUN = Pattern.compile("(?:[\\x01-\\xFF]\\x00){4,}");
+    private static final Pattern UTF16BE_RUN = Pattern.compile("(?:\\x00[\\x01-\\xFF]){4,}");
+
+    public static DeanonResult deanonymizeReport(String text, Map<String, String> reverse) {
+        if (text != null && text.indexOf('\0') >= 0 && reverse != null && !reverse.isEmpty()) {
+            // tratti UTF-16 (body anonimizzato in UTF-16): si decodificano, si ripristinano,
+            // si ricodificano uguali
+            int[] counts = new int[2];
+            List<String> unk = new ArrayList<>(), alt = new ArrayList<>();
+            for (int kind = 1; kind <= 2; kind++) {
+                final int k = kind;
+                text = regexReplace(text, kind == 1 ? UTF16LE_RUN : UTF16BE_RUN, m -> {
+                    String dec = decodeUtf16(m.group(), k);
+                    if (dec == null) return m.group();
+                    DeanonResult r = deanonymizeReport(dec, reverse);
+                    counts[0] += r.replaced;
+                    counts[1] += r.unescaped;
+                    unk.addAll(r.unknown);
+                    alt.addAll(r.altered);
+                    return r.replaced == 0 ? m.group() : encodeUtf16(r.text, k);
+                });
+            }
+            DeanonResult rest = deanonymizeReport(text, reverse, true);
+            unk.addAll(rest.unknown);
+            alt.addAll(rest.altered);
+            return new DeanonResult(rest.text, rest.replaced + counts[0], rest.unescaped + counts[1], unk, alt);
+        }
+        return deanonymizeReport(text, reverse, true);
+    }
+
+    private static DeanonResult deanonymizeReport(String text, Map<String, String> reverse, boolean plain) {
+        List<String> unknown = new ArrayList<>();
+        List<String> altered = new ArrayList<>();
+        if (text == null || text.isEmpty() || reverse == null || reverse.isEmpty()) {
+            return new DeanonResult(text, 0, 0, unknown, altered);
+        }
         List<String> toks = new ArrayList<>(reverse.keySet());
         toks.removeIf(t -> t == null || t.isEmpty());
-        if (toks.isEmpty()) return text;
+        if (toks.isEmpty()) return new DeanonResult(text, 0, 0, unknown, altered);
         toks.sort((a, b) -> Integer.compare(b.length(), a.length()));
         StringBuilder alt = new StringBuilder();
         for (int i = 0; i < toks.size(); i++) {
             if (i > 0) alt.append('|');
-            alt.append(Pattern.quote(toks.get(i)));
+            String t = toks.get(i);
+            // gli LLM in markdown scrivono spesso HOST\_1: accettato come HOST_1
+            if (t.matches("[A-Z0-9_]+")) alt.append(t.replace("_", "\\\\?_"));
+            else alt.append(Pattern.quote(t));
         }
+        // confine di parola, ma un placeholder puo' seguire una sequenza %XX ("%22EMAIL_5_URL")
         // confine di parola, ma un placeholder puo' seguire una sequenza %XX ("%22EMAIL_5_URL")
         Pattern p = Pattern.compile("(?:(?<![\\w])|(?<=%(?:25){0,3}[0-9A-Fa-f]{2}))(?:" + alt + ")(?![\\w])");
         Matcher m = p.matcher(text);
         StringBuilder sb = new StringBuilder();
+        int replaced = 0, unescaped = 0;
         while (m.find()) {
-            String original = reverse.get(m.group());
-            m.appendReplacement(sb, Matcher.quoteReplacement(original == null ? m.group() : original));
+            String tok = m.group();
+            String key = tok.indexOf('\\') >= 0 ? tok.replace("\\_", "_") : tok;
+            String original = reverse.get(key);
+            if (original != null) {
+                replaced++;
+                if (!key.equals(tok)) unescaped++;
+            }
+            m.appendReplacement(sb, Matcher.quoteReplacement(original == null ? tok : original));
         }
         m.appendTail(sb);
-        return sb.toString();
+
+        // diagnostica: segnaposto che sembrano nostri ma non corrispondono esattamente
+        Set<String> roots = new java.util.HashSet<>();
+        Set<String> upperKeys = new java.util.HashSet<>();
+        for (String k : toks) {
+            Matcher r = PH_ROOT.matcher(k);
+            if (r.matches()) roots.add(r.group(1));
+            upperKeys.add(k.toUpperCase(Locale.ROOT));
+        }
+        Matcher s = PH_SHAPE_LOOSE.matcher(text);
+        while (s.find() && unknown.size() + altered.size() < 40) {
+            String found = s.group();
+            String clean = found.replace("\\_", "_");
+            if (reverse.containsKey(clean)) continue;
+            String prefix = s.group(1).replace("\\_", "_");
+            String base = prefix + "_" + s.group(2);
+            String upBase = base.toUpperCase(Locale.ROOT);
+            if (!roots.contains(prefix.toUpperCase(Locale.ROOT))) continue; // non e' un nostro tipo
+            boolean isAltered = !clean.equals(clean.toUpperCase(Locale.ROOT)) && upperKeys.contains(clean.toUpperCase(Locale.ROOT))
+                    || (!s.group(3).isEmpty() && (reverse.containsKey(base) || upperKeys.contains(upBase)));
+            List<String> into = isAltered ? altered : (reverse.containsKey(upBase) ? altered : unknown);
+            if (!into.contains(clean)) into.add(clean);
+        }
+        return new DeanonResult(sb.toString(), replaced, unescaped, unknown, altered);
     }
 }

@@ -1,5 +1,5 @@
 {
-  "_comment": "Domi Reversi - pattern regex per dati sensibili nei body/valori. 'prefix' e' il prefisso del placeholder (es. EMAIL -> EMAIL_1). 'validate' opzionale: card (Luhn + circuito), iban (mod 97), phone, hex, b64, b64secret. L'ordine conta: i pattern piu' specifici vengono applicati prima di quelli generici. I pattern 'generic_*' e quelli con validate hex/b64 sono saltati sotto chiavi identificative (id, hash, commit...). Evitare gruppi ripetuti senza limite (rischio di blocchi su input lunghi).",
+  "_comment": "Domi Reversi - pattern regex per dati sensibili nei body/valori. 'prefix' e' il prefisso del placeholder (es. EMAIL -> EMAIL_1). 'validate' opzionale: card (Luhn + circuito), iban (mod 97), phone, hex, b64, b64secret, username, aduser, personname, hostname, pathtoken (questi ultimi controllano il valore dopo il gruppo 'keep_group', che resta in chiaro). L'ordine conta: i pattern piu' specifici vengono applicati prima di quelli generici. I pattern 'generic_*' e quelli con validate hex/b64 sono saltati sotto chiavi identificative (id, hash, commit...). Evitare gruppi ripetuti senza limite (rischio di blocchi su input lunghi).",
   "patterns": [
     {
       "name": "private_key_block",
@@ -37,6 +37,323 @@
       "prefix": "EMAIL",
       "regex": "(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]{1,64}@[A-Za-z0-9-]{1,63}(?:\\.[A-Za-z0-9-]{1,63}){0,8}\\.[A-Za-z]{2,24}\\b",
       "flags": ""
+    },
+    {
+      "name": "windows_profile_user",
+      "prefix": "USERNAME",
+      "regex": "((?:\\b[A-Za-z]:)?\\\\{1,2}(?:Users|Documents and Settings)\\\\{1,2})([A-Za-z0-9][A-Za-z0-9._ -]{0,38}[A-Za-z0-9])(?=\\\\)",
+      "flags": "",
+      "keep_group": 1,
+      "validate": "username",
+      "_comment": "C:\\Users\\mrossi\\AppData -> C:\\Users\\USERNAME_1\\AppData (stack trace, path di errore)"
+    },
+    {
+      "name": "unix_home_user",
+      "prefix": "USERNAME",
+      "regex": "((?<![\\w./-])/(?:home|Users|export/home)/)([a-z_][a-z0-9._-]{1,31})(?=/(?:\\.[\\w-]+|app|apps|src|code|projects?|Projects|Desktop|Documents|Downloads|Library|workspace|work|dev|git|repos?|venv|\\.venv|go|bin|lib|tmp|www|public_html|htdocs|node_modules|Applications)\\b)",
+      "flags": "",
+      "keep_group": 1,
+      "validate": "username",
+      "_comment": "/home/mrossi/app/main.py: solo se segue una cartella tipica, per non toccare le route web /home/..."
+    },
+    {
+      "name": "domain_user",
+      "prefix": "USERNAME",
+      "regex": "((?<![\\w\\\\])(?!HK(?:LM|CU|CR|U|CC)\\b|NT\\b)[A-Z][A-Z0-9-]{1,14}\\\\{1,2})([A-Za-z][A-Za-z0-9._-]{2,30})(?![\\w\\\\])",
+      "flags": "",
+      "keep_group": 1,
+      "validate": "aduser",
+      "_comment": "Utente di dominio Windows/AD: ACME\\m.rossi"
+    },
+    {
+      "name": "unc_host",
+      "prefix": "HOST",
+      "regex": "((?<![\\w\\\\])\\\\{2,4})([A-Za-z0-9][A-Za-z0-9.-]{2,62})(?=\\\\{1,2}[^\\\\\\s])",
+      "flags": "",
+      "keep_group": 1,
+      "validate": "hostname",
+      "_comment": "Percorso UNC \\\\fs01\\HR$ -> \\\\HOST_1\\HR$"
+    },
+    {
+      "name": "web_user_path",
+      "prefix": "USERNAME",
+      "regex": "((?<![\\w.-])/(?:(?:users?|members?|accounts?|employees?|people|profiles?|utenti|utente|dipendenti|clienti)/|~))([A-Za-z][A-Za-z0-9._@-]{2,40})(?=[/?#\\s\"'&;,)]|$)",
+      "flags": "i",
+      "keep_group": 1,
+      "validate": "username",
+      "_comment": "Username nel path: /users/mario.rossi/profile, /~mrossi/. Le route (/users/me, /users/search...) sono in context.not_usernames"
+    },
+    {
+      "name": "ldap_password_hash",
+      "prefix": "SECRET",
+      "regex": "\\{(?:SSHA|SHA|SSHA256|SSHA384|SSHA512|SHA256|SHA512|MD5|SMD5|CRYPT|PBKDF2(?:-SHA\\d{1,3})?|ARGON2|CLEARTEXT)\\}[A-Za-z0-9+/=.$:,-]{4,512}",
+      "flags": "i",
+      "_comment": "Hash di password LDAP (userPassword: {SSHA}...) in export LDIF o risposte di directory"
+    },
+    {
+      "name": "dav_user_path",
+      "prefix": "USERNAME",
+      "regex": "(/(?:remote\\.php/(?:dav|webdav)/(?:files|calendars|addressbooks|principals/users|uploads|trashbin|versions)|dav/(?:files|calendars|addressbooks|principals)|principals/users|SOGo/dav)/)([A-Za-z0-9][A-Za-z0-9._@-]{1,64})(?=[/?#\\s\\\"'<]|$)",
+      "flags": "i",
+      "keep_group": 1,
+      "validate": "username",
+      "_comment": "Utente nei percorsi WebDAV/CalDAV/CardDAV (Nextcloud, ownCloud, SOGo): /remote.php/dav/files/<utente>/..."
+    },
+    {
+      "name": "sensitive_path_token",
+      "prefix": "TOKEN",
+      "regex": "((?<![\\w.-])/(?:sessions?|tokens?|reset(?:-?password)?|password-?reset|invit(?:e|es|ation|ations)|verify|verification|activat(?:e|ion)|confirm(?:ation)?|magic-?links?|unsubscribe|share|shared|download-?links?|otp)/)([A-Za-z0-9_-]{16,256})(?=[/?#\\s\"'&;,)]|$)",
+      "flags": "i",
+      "keep_group": 1,
+      "validate": "pathtoken",
+      "_comment": "Token in un path sensibile (anche UUID): /reset-password/<token>, /session/<uuid>"
+    },
+    {
+      "name": "salutation_name",
+      "prefix": "NAME",
+      "regex": "((?<!\\p{L})(?:Gentile|Gentilissim[oa]|Gent\\.(?:mo|ma|mi|me)|Egregi[oa]|Car[oa]|Spett\\.le|Sig\\.(?:ra|na)?|Signor[a]?|Dott\\.(?:ssa)?|Ing\\.|Avv\\.|Dear|Mr\\.?|Mrs\\.?|Ms\\.?|Dr\\.?)[ \\t]+)(\\p{Lu}[\\p{Ll}'\\u2019]{1,30}(?:[ \\t]+\\p{Lu}[\\p{Ll}'\\u2019]{1,30}){0,2})",
+      "flags": "",
+      "keep_group": 1,
+      "validate": "personname",
+      "_comment": "Nome dopo un saluto nel testo libero: 'Gentile Mario Rossi', 'Dear John Smith'"
+    },
+    {
+      "name": "passwd_user",
+      "prefix": "USERNAME",
+      "regex": "^[a-z_][a-z0-9_.-]{0,31}(?=:[^:\\n]{0,4}:[1-9]\\d{3,9}:\\d{1,10}:[^:\\n]{0,120}:/[^:\\n]{0,200}:[^:\\n]{0,200}$)",
+      "flags": "m",
+      "_comment": "Utente reale (uid >= 1000) in /etc/passwd o /etc/shadow esfiltrato via XXE/LFI; gli account di sistema (root, www-data...) restano"
+    },
+    {
+      "name": "passwd_gecos",
+      "prefix": "NAME",
+      "regex": "(^[^:\\n]{1,40}:[^:\\n]{0,4}:[1-9]\\d{3,9}:\\d{1,10}:)(\\p{L}[^:,\\n]{2,60})(?=[^:\\n]{0,60}:/[^:\\n]{0,200}:[^:\\n]{0,200}$)",
+      "flags": "m",
+      "keep_group": 1,
+      "validate": "personname",
+      "_comment": "Nome completo nel campo GECOS di /etc/passwd"
+    },
+    {
+      "name": "passwd_home",
+      "prefix": "USERNAME",
+      "regex": "(^[^:\\n]{1,40}:[^:\\n]{0,4}:[1-9]\\d{3,9}:\\d{1,10}:[^:\\n]{0,120}:/(?:home|Users|export/home)/)([^:/\\n]{1,32})(?=[^:\\n]{0,200}:[^:\\n]{0,200}$)",
+      "flags": "m",
+      "keep_group": 1,
+      "validate": "username",
+      "_comment": "Home dell'utente in /etc/passwd"
+    },
+    {
+      "name": "unix_crypt_hash",
+      "prefix": "SECRET",
+      "regex": "\\$(?:1|2[abxy]?|5|6|y|gy|7|sha1|md5)\\$[./A-Za-z0-9$=,]{8,512}",
+      "flags": "",
+      "_comment": "Hash di password in formato crypt (shadow, htpasswd): $6$..., $2b$..., $y$..."
+    },
+    {
+      "name": "id_output_user",
+      "prefix": "USERNAME",
+      "regex": "((?:uid|gid|euid|egid|groups)=[1-9]\\d{3,9}\\()([a-z_][a-z0-9_.-]{0,31})(?=\\))",
+      "flags": "",
+      "keep_group": 1,
+      "validate": "username",
+      "_comment": "Output di 'id' dopo una command injection: uid=1001(mrossi)"
+    },
+    {
+      "name": "ldap_dn_person",
+      "prefix": "NAME",
+      "regex": "((?<![\\w-])(?:cn|uid|samaccountname|displayname)=)([^,+=\\n\\\"<>;\\\\]{2,64})(?=,|$|\\n|\\\")",
+      "flags": "i",
+      "keep_group": 1,
+      "validate": "username",
+      "_comment": "Persona in un DN LDAP (cn=Mario Rossi,ou=People,...) restituito da una LDAP injection"
+    },
+    {
+      "name": "ldap_dn_domain",
+      "prefix": "ORG",
+      "regex": "((?<![\\w-])dc=)([A-Za-z0-9-]{2,63})(?=,dc=)",
+      "flags": "i",
+      "keep_group": 1,
+      "validate": "hostname",
+      "_comment": "Dominio dell'organizzazione nei componenti dc= di un DN (l'ultimo, il TLD, resta)"
+    },
+    {
+      "name": "connstring_server",
+      "prefix": "HOST",
+      "regex": "((?<![\\w])(?:data source|server|address|addr|network address|host)\\s*=\\s*)((?:tcp:)?[A-Za-z0-9][A-Za-z0-9.\\\\-]{1,120})(?=[;,\\\"'\\s]|$)",
+      "flags": "i",
+      "keep_group": 1,
+      "validate": "hostname",
+      "_comment": "Server in una connection string ADO.NET/ODBC: Data Source=SQLPROD01; Server=..."
+    },
+    {
+      "name": "ini_person_name",
+      "prefix": "NAME",
+      "regex": "(^[ \\t]*(?:name|author|committer|fullname)[ \\t]*=[ \\t]*)(\\p{Lu}\\p{Ll}+(?:[ \\t]+\\p{Lu}[\\p{Ll}']+){1,3})(?=[ \\t]*$)",
+      "flags": "m",
+      "keep_group": 1,
+      "validate": "personname",
+      "_comment": "Nome e cognome in file INI/.gitconfig esposti: 'name = Mario Rossi'"
+    },
+    {
+      "name": "azure_ad_client_secret",
+      "prefix": "SECRET",
+      "regex": "(?<![A-Za-z0-9_~.-])[A-Za-z0-9_~.]{3}\\dQ~[A-Za-z0-9_~.-]{31,34}(?![A-Za-z0-9_~.-])",
+      "flags": "",
+      "_comment": "Client secret di Azure AD / Entra ID"
+    },
+    {
+      "name": "hashicorp_vault_token",
+      "prefix": "SECRET",
+      "regex": "\\b(?:hvs|hvb|hvr)\\.[A-Za-z0-9_-]{20,}",
+      "flags": "",
+      "_comment": "Token HashiCorp Vault"
+    },
+    {
+      "name": "doppler_token",
+      "prefix": "SECRET",
+      "regex": "\\bdp\\.(?:pt|st|sa|ct|scim|audit)\\.[A-Za-z0-9]{40,}",
+      "flags": "",
+      "_comment": "Token Doppler"
+    },
+    {
+      "name": "pypi_token",
+      "prefix": "SECRET",
+      "regex": "\\bpypi-AgEIcHlwaS5vcmc[A-Za-z0-9_-]{20,}",
+      "flags": "",
+      "_comment": "Token PyPI"
+    },
+    {
+      "name": "dockerhub_pat",
+      "prefix": "SECRET",
+      "regex": "\\bdckr_pat_[A-Za-z0-9_-]{20,}",
+      "flags": "",
+      "_comment": "Personal access token Docker Hub"
+    },
+    {
+      "name": "postman_key",
+      "prefix": "SECRET",
+      "regex": "\\bPMAK-[A-Za-z0-9]{24}-[A-Za-z0-9]{34}\\b",
+      "flags": "",
+      "_comment": "API key Postman"
+    },
+    {
+      "name": "grafana_token",
+      "prefix": "SECRET",
+      "regex": "\\b(?:glsa_[A-Za-z0-9]{32}_[A-Fa-f0-9]{8}|glc_[A-Za-z0-9+/]{32,}={0,2})",
+      "flags": "",
+      "_comment": "Token Grafana (service account / cloud)"
+    },
+    {
+      "name": "newrelic_key",
+      "prefix": "SECRET",
+      "regex": "\\bNR(?:AK|AA|II|JS)-[A-Za-z0-9]{20,}\\b",
+      "flags": "",
+      "_comment": "Chiavi New Relic"
+    },
+    {
+      "name": "digitalocean_token",
+      "prefix": "SECRET",
+      "regex": "\\bdo[opr]_v1_[a-f0-9]{64}\\b",
+      "flags": "",
+      "_comment": "Token DigitalOcean"
+    },
+    {
+      "name": "databricks_token",
+      "prefix": "SECRET",
+      "regex": "\\bdapi[a-f0-9]{32}(?:-\\d)?\\b",
+      "flags": "",
+      "_comment": "Token Databricks"
+    },
+    {
+      "name": "atlassian_token",
+      "prefix": "SECRET",
+      "regex": "\\bATATT3[A-Za-z0-9_=-]{20,}",
+      "flags": "",
+      "_comment": "API token Atlassian"
+    },
+    {
+      "name": "square_token",
+      "prefix": "SECRET",
+      "regex": "\\b(?:sq0atp|sq0csp)-[A-Za-z0-9_-]{20,}",
+      "flags": "",
+      "_comment": "Token Square"
+    },
+    {
+      "name": "facebook_token",
+      "prefix": "TOKEN",
+      "regex": "\\bEAA[A-Za-z0-9]{30,}",
+      "flags": "",
+      "_comment": "Access token Facebook/Meta"
+    },
+    {
+      "name": "twitter_bearer",
+      "prefix": "TOKEN",
+      "regex": "\\bA{20,}[A-Za-z0-9%]{20,}",
+      "flags": "",
+      "_comment": "Bearer token Twitter/X"
+    },
+    {
+      "name": "hubspot_token",
+      "prefix": "SECRET",
+      "regex": "\\bpat-(?:na|eu)1-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\\b",
+      "flags": "",
+      "_comment": "Private app token HubSpot"
+    },
+    {
+      "name": "dropbox_token",
+      "prefix": "SECRET",
+      "regex": "\\bsl\\.[A-Za-z0-9_-]{40,}",
+      "flags": "",
+      "_comment": "Token Dropbox (short-lived)"
+    },
+    {
+      "name": "notion_token",
+      "prefix": "SECRET",
+      "regex": "\\b(?:ntn_|secret_)[A-Za-z0-9]{40,}",
+      "flags": "",
+      "_comment": "Token di integrazione Notion"
+    },
+    {
+      "name": "figma_token",
+      "prefix": "SECRET",
+      "regex": "\\bfigd_[A-Za-z0-9_-]{30,}",
+      "flags": "",
+      "_comment": "Token Figma"
+    },
+    {
+      "name": "linear_key",
+      "prefix": "SECRET",
+      "regex": "\\blin_api_[A-Za-z0-9]{40}\\b",
+      "flags": "",
+      "_comment": "API key Linear"
+    },
+    {
+      "name": "supabase_token",
+      "prefix": "SECRET",
+      "regex": "\\bsbp_[a-f0-9]{40}\\b",
+      "flags": "",
+      "_comment": "Token Supabase"
+    },
+    {
+      "name": "sentry_dsn_key",
+      "prefix": "SECRET",
+      "regex": "(?<=://)[a-f0-9]{32}(?=@[A-Za-z0-9.-]*sentry)",
+      "flags": "",
+      "_comment": "Chiave pubblica di un DSN Sentry"
+    },
+    {
+      "name": "crypto_btc_bech32",
+      "prefix": "WALLET",
+      "regex": "\\bbc1[ac-hj-np-z02-9]{11,71}\\b",
+      "flags": "",
+      "_comment": "Wallet Bitcoin (bech32)"
+    },
+    {
+      "name": "crypto_eth",
+      "prefix": "WALLET",
+      "regex": "\\b0x[a-fA-F0-9]{40}\\b",
+      "flags": "",
+      "_comment": "Wallet Ethereum / EVM"
     },
     {
       "name": "sendgrid_key",
@@ -148,16 +465,65 @@
       "validate": "iban"
     },
     {
+      "name": "credit_card_with_expiry",
+      "prefix": "CARD",
+      "regex": "\\b\\d(?:[ .\\-]?\\d){11,18}(?=[ .\\-](?:0?[1-9]|1[0-2])(?:[/\\-.]| )?\\d{2}(?:\\d{2})?\\b)",
+      "flags": "",
+      "validate": "card",
+      "_comment": "Carta con la scadenza attaccata ('4111 1111 1111 1111 12/26'): senza, il numero piu' la scadenza non passa il Luhn e la carta resterebbe in chiaro (idea da rizzo-pii)"
+    },
+    {
       "name": "credit_card",
       "prefix": "CARD",
-      "regex": "\\b\\d(?:[ -]?\\d){11,18}\\b",
+      "regex": "\\b\\d(?:[ .\\-]?\\d){11,18}\\b",
       "flags": "",
       "validate": "card"
     },
     {
+      "name": "iban_tail_guard",
+      "prefix": "IBAN",
+      "regex": "\\b[A-Z]{2}\\d{2}(?:[ \\-.]?[A-Z0-9]){11,30}\\b",
+      "flags": "",
+      "validate": "iban",
+      "_comment": "IBAN con trattini o punti come separatori; la forma a gruppi con a capo e' gestita dal codice con la lunghezza per paese (ISO 13616)"
+    },
+    {
+      "name": "targa_it",
+      "prefix": "PLATE",
+      "regex": "\\b[A-HJ-NPR-TV-Z]{2}[ \\-]?\\d{3}[ \\-]?[A-HJ-NPR-TV-Z]{2}\\b",
+      "flags": "",
+      "validate": "plate",
+      "_comment": "Targa italiana nel testo (AB 123 CD, AB-123-CD, AB123CD): alfabeto senza I, O, Q, U come le targhe vere, maiuscole obbligatorie (idea da rizzo-pii)"
+    },
+    {
+      "name": "docid_it",
+      "prefix": "DOCID",
+      "regex": "(\\b(?:R\\.?\\s?G\\.?(?:\\s?N\\.?\\s?R\\.?)?|Prot\\.?|protocollo|Rep\\.?|repertorio)(?:\\s{0,3}(?:n\\.?|num\\.?|nro\\.?|°))?\\s{0,3})(\\d{1,8}(?:[/\\-]\\d{2,4})?)\\b",
+      "flags": "i",
+      "keep_group": 1,
+      "_comment": "Numero di protocollo / ruolo generale / repertorio dopo la sua sigla: la sigla resta, il numero diventa DOCID_n (idea da rizzo-pii; utile sui portali della PA)"
+    },
+    {
+      "name": "dob_context",
+      "prefix": "DOB",
+      "regex": "(\\b(?:nat[oa](?:/[oa])?\\s{1,3}(?:il\\s{1,3})?|data\\s{1,3}di\\s{1,3}nascita\\s{0,3}[:.]?\\s{0,3}|d\\.?o\\.?b\\.?\\s{0,3}[:.]?\\s{0,3}|date\\s{1,3}of\\s{1,3}birth\\s{0,3}[:.]?\\s{0,3}|born\\s{1,3}(?:on\\s{1,3})?))((?:0?[1-9]|[12]\\d|3[01])[/.\\-](?:0?[1-9]|1[0-2])[/.\\-](?:19|20)\\d{2}|(?:19|20)\\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01]))",
+      "flags": "i",
+      "keep_group": 1,
+      "_comment": "Data di nascita nel testo ('nato il 14/03/1985'): le date qualunque restano leggibili"
+    },
+    {
+      "name": "piva_checksum",
+      "prefix": "PIVA",
+      "regex": "(?<![A-Za-z0-9.,/\\-])\\d{11}(?![A-Za-z0-9.,/\\-])",
+      "flags": "",
+      "validate": "piva",
+      "_comment": "Partita IVA senza contesto: 11 cifre con carattere di controllo valido (algoritmo ufficiale, come rizzo-pii); saltata sotto le chiavi identificative"
+    },
+    {
       "name": "codice_fiscale",
+      "validate": "cf",
       "prefix": "CF",
-      "regex": "\\b[A-Z]{6}[0-9]{2}[A-Z][0-9]{2}[A-Z][0-9]{3}[A-Z]\\b",
+      "regex": "\\b[A-Za-z]{6}[0-9LMNPQRSTUVlmnpqrstuv]{2}[A-Za-z][0-9LMNPQRSTUVlmnpqrstuv]{2}[A-Za-z][0-9LMNPQRSTUVlmnpqrstuv]{3}[A-Za-z]\\b",
       "flags": "i"
     },
     {
@@ -188,7 +554,7 @@
     {
       "name": "ipv6",
       "prefix": "IP",
-      "regex": "\\b(?:[A-Fa-f0-9]{1,4}:){7}[A-Fa-f0-9]{1,4}\\b|(?:[A-Fa-f0-9]{1,4}:){1,7}:(?:[A-Fa-f0-9]{1,4}:){0,6}[A-Fa-f0-9]{1,4}\\b|\\b(?:[A-Fa-f0-9]{1,4}:){1,7}:(?![A-Fa-f0-9])",
+      "regex": "\\b(?:[A-Fa-f0-9]{1,4}:){7}[A-Fa-f0-9]{1,4}\\b|(?<![:\\w])(?:[A-Fa-f0-9]{1,4}:){1,7}:(?:[A-Fa-f0-9]{1,4}:){0,6}[A-Fa-f0-9]{1,4}\\b|(?<![:\\w])(?:[A-Fa-f0-9]{1,4}:){1,7}:(?![A-Fa-f0-9:])",
       "flags": ""
     },
     {
@@ -234,6 +600,106 @@
       "span_id", "traceparent", "tracestate", "x-amzn-trace-id", "x-b3-traceid", "x-b3-spanid"
     ]
   },
+  "context": {
+    "_comment": "Regole di contesto: cosa e' sensibile per DOVE compare. Tutte le liste si estendono anche da un file utente (~/.domi-reversi/sensitive_patterns.json) senza ricompilare. org_stop: etichette di dominio che NON sono il nome del cliente (CDN, SaaS, parole generiche). org_min_length: un nome di cliente ricavato dal dominio senza trattini/cifre deve avere almeno questa lunghezza (i nomi corti vanno aggiunti a mano nel campo Cliente). host_keys: chiavi il cui valore e' un nome di macchina. not_usernames / not_names: segmenti di route e parole che seguono /users/ o un saluto ma non sono persone. common_users + credential_hints: quando 'utente / valore' in un commento e' una credenziale. keep_values: indirizzi e host pubblici non identificativi mai sostituiti (loopback, metadata cloud per le SSRF, domini d'esempio). attack_markers: regex (maiuscole ignorate) della sintassi d'attacco: un valore che le contiene e' un payload del tester e resta leggibile, anche sotto una chiave sensibile; email, IP e segreti al suo interno vengono comunque cercati. jwt_identity_claims: claim che identificano una persona; se presenti (con un valore che non sia un numero, un UUID o un'utenza generica) i claims del JWT vengono nascosti, altrimenti header e claims restano leggibili e si nasconde solo la firma. xmlrpc_credentials: posizioni (1-based) di username e password per metodo XML-RPC; una chiave che finisce con '.' vale per tutti i metodi con quel prefisso (wp., blogger., metaWeblog.); 0 = nessuna. vcard_properties: proprieta' vCard/iCalendar nascoste per intero e il loro prefisso.",
+    "org_min_length": 6,
+    "org_stop": [
+      "account", "accounts", "admin", "akamai", "akamaihd", "akamaized",
+      "amazonaws", "api", "apis", "app", "apple", "apps",
+      "appspot", "assets", "auth", "auth0", "azure", "azurewebsites",
+      "bootstrapcdn", "burpcollaborator", "cdn", "cloud", "cloudapp", "cloudflare",
+      "cloudfront", "corp", "datadoghq", "digital", "digitaloceanspaces", "doubleclick",
+      "example", "facebook", "fastly", "fbcdn", "firebaseapp", "firebaseio",
+      "fontawesome", "github", "githubusercontent", "gitlab", "global", "google",
+      "googleapis", "gravatar", "gstatic", "herokuapp", "hotjar", "hubspot",
+      "icloud", "internal", "intranet", "jquery", "jsdelivr", "linkedin",
+      "live", "local", "localhost", "login", "mail", "mailchimp",
+      "media", "microsoft", "microsoftonline", "mixpanel", "mobile", "netlify",
+      "network", "newrelic", "ngrok", "oastify", "office", "office365",
+      "okta", "online", "paypal", "portal", "portale", "public",
+      "recaptcha", "salesforce", "secure", "segment", "sendgrid", "sentry",
+      "server", "service", "services", "servizi", "sharepoint", "shop",
+      "sito", "slack", "staging", "static", "store", "stripe",
+      "system", "systems", "test", "twilio", "twitter", "typekit",
+      "unpkg", "vercel", "windows", "www", "youtube", "zendesk"
+    ],
+    "two_level_suffixes": [
+      "ac.uk", "co.il", "co.in", "co.jp", "co.kr", "co.nz",
+      "co.uk", "co.za", "com.ar", "com.au", "com.br", "com.cn",
+      "com.co", "com.es", "com.hk", "com.mx", "com.pe", "com.pl",
+      "com.pt", "com.sg", "com.tr", "com.ua", "edu.au", "gov.au",
+      "gov.it", "gov.uk", "ltd.uk", "me.uk", "ne.jp", "net.au",
+      "or.jp", "org.au", "org.uk", "plc.uk"
+    ],
+    "host_keys": [
+      "backend", "backendhost", "computername", "datasource", "db", "dbhost",
+      "fqdn", "host", "hostname", "instance", "instancename", "machine",
+      "machinename", "nodename", "server", "serverhost", "servername", "sqlserver",
+      "upstream", "workstation"
+    ],
+    "not_usernames": [
+      "activate", "active", "add", "admin", "administrators", "all",
+      "all users", "anonymous", "api", "appdata", "avatar", "avatars",
+      "batch", "builtin", "bulk", "by-email", "by-id", "check",
+      "computers", "count", "create", "current", "dashboard", "default",
+      "default user", "delete", "desktop", "details", "documents", "domain admins",
+      "domain users", "downloads", "edit", "everyone", "exists", "export",
+      "favorites", "feed", "find", "follow", "followers", "following",
+      "groups", "guest", "history", "home", "image", "import",
+      "inactive", "index", "info", "invite", "items", "library",
+      "list", "local service", "localservice", "login", "logout", "lookup",
+      "me", "network service", "networkservice", "new", "notifications", "null",
+      "online", "orders", "overview", "page", "password", "people",
+      "permissions", "photo", "picture", "popular", "preferences", "profile",
+      "profiles", "public", "query", "recent", "register", "remove",
+      "reset", "roles", "root", "search", "self", "services",
+      "sessions", "settings", "shared", "signin", "signout", "signup",
+      "stats", "status", "summary", "system", "system32", "top",
+      "undefined", "update", "users", "verify"
+    ],
+    "not_names": [
+      "abbonato", "admin", "all", "amica", "amico", "amministratore",
+      "cliente", "clienti", "collega", "colleghi", "customer", "customers",
+      "direttore", "everyone", "friend", "madam", "member", "partner",
+      "responsabile", "signora", "signore", "sir", "socio", "staff",
+      "subscriber", "support", "supporto", "team", "tutti", "user",
+      "users", "utente", "utenti"
+    ],
+    "common_users": [
+      "admin", "administrator", "amministratore", "demo", "dev", "developer",
+      "guest", "manager", "operator", "root", "sa", "superuser",
+      "support", "sysadmin", "test", "user", "utente"
+    ],
+    "credential_hints": [
+      "accesso", "account", "admin", "credential", "credenzial", "creds",
+      "login", "pass", "psw", "pwd", "root", "utenz"
+    ],
+    "jwt_identity_claims": [
+      "sub", "upn", "preferred_username", "unique_name", "name", "given_name", "family_name", "nickname",
+      "email", "uid", "username", "user", "user_name", "login", "samaccountname", "employee_id", "emp_id"
+    ],
+    "xmlrpc_credentials": {"wp.getUsersBlogs": [1, 2], "wp.": [2, 3], "blogger.getUsersBlogs": [2, 3], "blogger.getUserInfo": [2, 3], "blogger.": [3, 4], "metaWeblog.": [2, 3], "mt.": [2, 3], "wp.getOptions": [2, 3], "pingback.ping": [0, 0], "system.listMethods": [0, 0]},
+    "vcard_properties": {"FN": "NAME", "N": "NAME", "NICKNAME": "NAME", "EMAIL": "EMAIL", "TEL": "PHONE", "ADR": "ADDRESS", "LABEL": "ADDRESS", "BDAY": "DOB", "ANNIVERSARY": "DOB", "ORG": "ORG", "LOCATION": "ADDRESS", "GEO": "GEO", "PHOTO": "SECRET", "KEY": "SECRET", "IMPP": "USERNAME", "X-SKYPE": "USERNAME"},
+    "keep_values": [
+      "0.0.0.0", "100.100.100.200", "127.0.0.1", "169.254.169.254", "169.254.170.2", "192.0.0.192",
+      "255.255.255.255", "::1", "amazonaws.com", "attacker.example", "azurewebsites.net", "blob.core.windows.net",
+      "cloudfront.net", "core.windows.net", "evil.example", "example.com", "example.net", "example.org",
+      "fd00:ec2::254", "googleapis.com", "gserviceaccount.com", "ingest.sentry.io", "kubernetes.default", "kubernetes.default.svc",
+      "localhost", "metadata", "metadata.google.internal", "s3.amazonaws.com", "storage.googleapis.com"
+    ],
+    "attack_markers": [
+      "\\{\\{.{0,200}\\}\\}", "\\$\\{.{0,200}\\}", "<%.{0,200}%>",
+      "#\\{.{0,200}\\}", "\\*\\{.{0,200}\\}", "<\\s*script\\b",
+      "<\\s*svg\\b[^>]{0,200}\\bon\\w+\\s*=", "\\bon(?:error|load|mouseover|focus|click)\\s*=", "javascript\\s*:",
+      "<\\s*iframe\\b", "'\\s*(?:or|and)\\s+[^\\s=]{1,20}\\s*=", "\\bunion\\s+(?:all\\s+)?select\\b",
+      "\\b(?:sleep|benchmark|pg_sleep|waitfor\\s+delay)\\s*\\(", "(?:'|\\\")\\s*;\\s*--", "\\bextractvalue\\s*\\(",
+      "(?:\\.\\.[/\\\\]){2,}", "(?:\\.\\.%2f|%2e%2e%2f|%2e%2e/|\\.\\.%5c){1,}", "%0d%0a|%0a[\\w-]{1,40}(?::|%3a)|\\r?\\n[\\w-]{2,40}:[ \\t]",
+      "<!ENTITY\\b", "<!DOCTYPE\\b[^>]{0,200}\\[", "\\bjndi\\s*:",
+      "\\$\\(\\s*\\w+", "`\\s*(?:id|whoami|uname|cat|ls)\\b", "[;|&]\\s*(?:id|whoami|uname|cat\\s+/|ls\\s|ping\\s|nslookup\\s|curl\\s|wget\\s)",
+      "\\\"\\$(?:ne|gt|lt|regex|where|eq|in)\\\"|\\$(?:ne|gt|regex|where)\\b", "__proto__", "\\*\\)\\s*\\(",
+      "\\{\\s*__schema\\b"
+    ]
+  },
   "sensitive_json_keys": {
     "exact": [
       "email", "mail", "e-mail", "phone", "telephone", "telefono", "cellulare", "mobile", "msisdn",
@@ -244,15 +710,23 @@
       "dob", "birthdate", "birthday", "dateofbirth", "datanascita",
       "pan", "pass", "auth", "sid", "sessid", "sig", "otp", "pin", "pincode",
       "ip", "clientip", "remoteip", "ipaddress", "ipaddr",
+      "targa", "plate", "licenseplate", "numberplate", "vehicleplate",
+      "accountname", "samaccountname", "userprincipalname", "upn", "domainuser",
+      "passportnumber", "passportno", "numeropassaporto", "numerodocumento", "documentnumber", "idcardnumber",
+      "cartaidentita", "cartadidentita", "patente", "numeropatente", "driverlicense", "driverslicense", "drivinglicense", "licensenumber",
+      "nhsnumber", "nino", "itin", "nationalid", "nationalidnumber",
+      "diagnosi", "diagnosis", "patologia", "malattia", "terapia", "therapy", "medication", "farmaco", "allergie", "allergies",
+      "tenant", "tenantname", "company", "companyname", "organization", "organisation", "orgname",
+      "azienda", "ragionesociale", "customername", "clientname",
       "expiry", "expirydate", "expdate"
     ],
     "contains": [
-      "password", "passwd", "pwd", "passphrase",
+      "password", "passwd", "pwd", "passphrase", "passcode",
       "token", "secret", "apikey", "accesskey", "accountkey", "subscriptionkey", "privatekey",
       "secretkey", "clientsecret", "authorization", "authkey", "authtoken", "credential",
       "sessionid", "session", "cookie", "csrf", "xsrf", "signature", "jwt", "bearer",
       "cardnumber", "creditcard", "cardexp", "cvv", "cvc", "securitycode",
-      "otpcode", "totp", "email", "phone", "birth", "addressline"
+      "otpcode", "totp", "email", "phone", "birth", "addressline", "tenant", "passport", "apitoken"
     ]
   },
   "key_prefix_map": {
@@ -279,6 +753,15 @@
     "address": "ADDRESS", "indirizzo": "ADDRESS", "street": "ADDRESS", "addressline": "ADDRESS",
     "city": "ADDRESS", "cap": "ADDRESS", "zip": "ADDRESS",
     "dob": "DOB", "birthdate": "DOB", "birthday": "DOB", "dateofbirth": "DOB", "datanascita": "DOB", "birth": "DOB",
-    "ip": "IP", "clientip": "IP", "remoteip": "IP", "ipaddress": "IP", "ipaddr": "IP"
+    "ip": "IP", "clientip": "IP", "remoteip": "IP", "ipaddress": "IP", "ipaddr": "IP",
+    "targa": "PLATE", "plate": "PLATE", "licenseplate": "PLATE", "numberplate": "PLATE", "vehicleplate": "PLATE",
+    "accountname": "USERNAME", "samaccountname": "USERNAME", "userprincipalname": "USERNAME", "upn": "USERNAME", "domainuser": "USERNAME",
+    "passportnumber": "ID", "passportno": "ID", "numeropassaporto": "ID", "numerodocumento": "ID", "documentnumber": "ID", "idcardnumber": "ID",
+    "cartaidentita": "ID", "cartadidentita": "ID", "patente": "ID", "numeropatente": "ID", "driverlicense": "ID", "driverslicense": "ID",
+    "drivinglicense": "ID", "licensenumber": "ID", "nhsnumber": "ID", "nino": "ID", "itin": "ID", "nationalid": "ID", "nationalidnumber": "ID",
+    "diagnosi": "HEALTH", "diagnosis": "HEALTH", "patologia": "HEALTH", "malattia": "HEALTH", "terapia": "HEALTH", "therapy": "HEALTH",
+    "medication": "HEALTH", "farmaco": "HEALTH", "allergie": "HEALTH", "allergies": "HEALTH",
+    "tenant": "ORG", "tenantname": "ORG", "company": "ORG", "companyname": "ORG", "organization": "ORG",
+    "organisation": "ORG", "orgname": "ORG", "azienda": "ORG", "ragionesociale": "ORG", "customername": "ORG", "clientname": "ORG"
   }
 }

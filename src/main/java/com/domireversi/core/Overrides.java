@@ -22,6 +22,15 @@ public final class Overrides {
     public final Set<String> excludeValues = new HashSet<>();
     // valori esatti scelti a mano dall'utente da anonimizzare (-> CUSTOM_n)
     public final Set<String> forceValues = new HashSet<>();
+    // nome del cliente e termini riservati (progetto, codici interni) -> ORG_n ovunque
+    public final Set<String> orgTerms = new java.util.LinkedHashSet<>();
+
+    public Overrides withOrgTerms(Collection<String> terms) {
+        if (terms != null) {
+            for (String t : terms) if (t != null && t.trim().length() >= 3) orgTerms.add(t.trim());
+        }
+        return this;
+    }
 
     public static Overrides empty() {
         return new Overrides();
