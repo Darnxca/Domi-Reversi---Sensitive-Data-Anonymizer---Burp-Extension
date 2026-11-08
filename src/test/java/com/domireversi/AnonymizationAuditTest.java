@@ -767,10 +767,12 @@ class AnonymizationAuditTest {
             }));
         }
         out.add(DynamicTest.dynamicTest("body testo 1 MB in meno di 3 s", () -> {
+            run(req("text/plain", "lorem ipsum dolor sit amet, contatto x@clientecorp.it ".repeat(1_000))); // warm-up
             long ms = timeMs(req("text/plain", "lorem ipsum dolor sit amet, contatto x@clientecorp.it ".repeat(20_000)));
             assertTrue(ms < 3000, "troppo lento: " + ms + " ms");
         }));
         out.add(DynamicTest.dynamicTest("pagina HTML 1 MB in meno di 3 s", () -> {
+            run(resp("text/html", "<div class=\"item\"><a href=\"/p/1\">Prodotto</a><span>19,99</span></div>".repeat(1_000))); // warm-up
             long ms = timeMs(resp("text/html", "<div class=\"item\"><a href=\"/p/1\">Prodotto</a><span>19,99</span></div>".repeat(15_000)));
             assertTrue(ms < 3000, "troppo lento: " + ms + " ms");
         }));

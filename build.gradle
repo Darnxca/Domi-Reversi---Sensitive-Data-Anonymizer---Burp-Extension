@@ -6,7 +6,7 @@ plugins {
 
 group = 'com.domireversi'
 // La CI di release passa la versione dal tag: ./gradlew build -PreleaseVersion=1.2.3
-version = project.findProperty('releaseVersion') ?: '1.1.0'
+version = project.findProperty('releaseVersion') ?: '1.2.0'
 
 java {
     // Compila col JDK che esegue Gradle (qualunque >= 17), mirando al bytecode

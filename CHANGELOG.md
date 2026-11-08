@@ -6,6 +6,8 @@ All notable changes to this project are documented here. The format follows
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-11-08
+
 ### Added
 - **Client identity.** The base name of the target domain (`acme-corp` from `app.acme-corp.it`)
   becomes `ORG_n` everywhere it appears, in any spelling (`Acme Corp`, `acmecorp`, `ACME-CORP`):
