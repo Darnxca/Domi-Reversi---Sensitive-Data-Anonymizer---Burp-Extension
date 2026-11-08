@@ -39,8 +39,7 @@ All notable changes to this project are documented here. The format follows
   `X-Backend-Server` are still replaced.
 - **Client name glued by underscores** (`acmecorp_sid`, `acme_corp_exports`): the whole word becomes
   `ORG_n_W`, same root, still exactly reversible.
-- **From [rizzo-pii](https://github.com/Rizzo-AI-Academy/rizzo-pii)** (rules and tests adapted to
-  HTTP): bodies in **UTF-16** (readable on screen, invisible to the detectors) are decoded,
+- **Exports and odd encodings:** bodies in **UTF-16** (readable on screen, invisible to the detectors) are decoded,
   anonymized and re-encoded; **CSV/TSV exports** are anonymized by column header; IBANs printed in
   groups use the per-country length (ISO 13616) and may wrap once; cards with dots or with the
   expiry date attached; Italian plates in text; protocol / R.G. numbers; date of birth in text;
@@ -67,12 +66,11 @@ All notable changes to this project are documented here. The format follows
   placeholders altered (`host_1`, `HOST_1s`) or invented (`HOST_9`) by the LLM are reported and
   never guessed.
 - **Map export / import** (JSON, only when the user asks) to de-anonymize replies days later;
-  malformed maps are rejected as a whole. Idea taken from
-  [rizzo-pii](https://github.com/Rizzo-AI-Academy/rizzo-pii), like the codice fiscale checksum.
+  malformed maps are rejected as a whole.
 - **User configuration** in `~/.domi-reversi/` (or `-Ddomireversi.config.dir`), added on top of the
   bundled rules: new detectors, keys and context lists without rebuilding the jar. All context lists
   (`org_stop`, `host_keys`, `not_usernames`, `keep_values`, `attack_markers`…) moved to JSON.
-- **Data-driven edge-case catalog** (`src/test/resources/edgecases/*.json`, 312 cases in 14
+- **Data-driven edge-case catalog** (`src/test/resources/edgecases/*.json`, 317 cases in 14
   categories, including one per web-attack class) with a Markdown report; a case is one JSON entry.
 
 ### Changed
@@ -80,6 +78,12 @@ All notable changes to this project are documented here. The format follows
   `strategies.redact` to hide them again.
 
 ### Fixed
+- Usernames and tokens in URL paths were missed after a prefix such as `/api/v2/`
+  (`/api/v2/users/mario.rossi`, `/api/v1/reset-password/<token>`): the check on the preceding
+  character in `web_user_path` and `sensitive_path_token` was too strict and has been removed.
+- A secret found later in a message (under a `password` key, in `X-Api-Key`…) is now hidden also
+  where it appeared earlier in clear text; before, only usernames, names and hosts were propagated
+  backwards.
 - `Transfer-Encoding: chunked`: the anonymized body keeps the original chunk framing, so
   de-anonymization is byte-exact again; data after the last chunk (request smuggling) is no longer
   dropped.

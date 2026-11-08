@@ -138,6 +138,42 @@
       ]
     },
     {
+      "id": "cred-reset-path-prefisso-api",
+      "description": "Token di reset nel path dopo un prefisso di versione (/api/v1/reset-password/)",
+      "severity": "critical",
+      "request": "GET /api/v1/reset-password/Qm9vZ2llV29vZ2llMTIzNDU2 HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "must_hide": [
+        "Qm9vZ2llV29vZ2llMTIzNDU2"
+      ],
+      "must_keep": [
+        "/api/v1/reset-password/"
+      ]
+    },
+    {
+      "id": "cred-password-prima-della-chiave",
+      "description": "Password citata nel testo prima del campo \"password\": nascosta anche all'indietro",
+      "severity": "critical",
+      "request": "POST /login HTTP/1.1\nHost: app.acme-corp.it\nContent-Type: application/json\n\n{\"msg\":\"uso Zx9!kPq2Lm#7 come sempre\",\"password\":\"Zx9!kPq2Lm#7\"}",
+      "must_hide": [
+        "Zx9!kPq2Lm#7"
+      ],
+      "must_keep": [
+        "come sempre"
+      ]
+    },
+    {
+      "id": "cred-apikey-header-precedente",
+      "description": "API key in un header che precede X-Api-Key: nascosta anche all'indietro",
+      "severity": "critical",
+      "request": "POST /x HTTP/1.1\nHost: app.acme-corp.it\nX-Note: chiave sk9f8g7h6j5k4l3m2n1b\nX-Api-Key: sk9f8g7h6j5k4l3m2n1b\n\n",
+      "must_hide": [
+        "sk9f8g7h6j5k4l3m2n1b"
+      ],
+      "must_keep": [
+        "X-Note: chiave "
+      ]
+    },
+    {
       "id": "cred-uuid-sessione-path",
       "description": "UUID di sessione nel path",
       "severity": "high",

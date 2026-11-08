@@ -1296,7 +1296,7 @@ public final class Anonymizer {
         });
     }
 
-    // --- UTF-16 (idea da rizzo-pii) ---
+    // --- UTF-16 ---
     // Il caso peggiore non e' il testo illeggibile ma quello che a schermo sembra
     // normale e ai rilevatori no: "m\0a\0r\0i\0o\0". Si decodifica, si anonimizza
     // e si ricodifica uguale; la de-anonimizzazione fa il percorso inverso.
@@ -2303,7 +2303,7 @@ public final class Anonymizer {
         return text;
     }
 
-    // ---- IBAN nel formato di stampa (idea e tabella da rizzo-pii, ISO 13616) ----
+    // ---- IBAN nel formato di stampa (ISO 13616) ----
     // Dove finisce un IBAN a gruppi non si deduce dalla forma: senza la lunghezza
     // attesa per il paese o si inghiotte la parola dopo o si lascia in chiaro la coda.
     private static final Map<String, Integer> IBAN_LEN = new java.util.HashMap<>();
@@ -2470,8 +2470,8 @@ public final class Anonymizer {
     /**
      * Codice fiscale, anche omocodico (cifre sostituite da LMNPQRSTUV): carattere
      * di controllo corretto, oppure abbastanza cifre da non essere una parola.
-     * Algoritmo ufficiale (stesso approccio "redigi comunque se la forma e'
-     * specifica" di rizzo-pii: meglio nascondere un CF con un refuso).
+     * Algoritmo ufficiale; se la forma e' specifica si redige comunque:
+     * meglio nascondere un CF con un refuso.
      */
     static boolean plausibleCodiceFiscale(String s) {
         String c = s.toUpperCase(Locale.ROOT);
@@ -2495,7 +2495,7 @@ public final class Anonymizer {
         return digits >= 4;
     }
 
-    /** Partita IVA: algoritmo ufficiale del carattere di controllo (stesso di rizzo-pii). */
+    /** Partita IVA: algoritmo ufficiale del carattere di controllo. */
     static boolean validPartitaIva(String s) {
         String d = s.replaceAll("\\D", "");
         if (d.length() != 11 || d.chars().allMatch(c -> c == '0')) return false;
@@ -3273,6 +3273,9 @@ public final class Anonymizer {
         if (text == null || text.isEmpty()) return text;
         text = maskCommentCredentials(text);
         text = maskNamedValues(text);
+        // segreti, token e nomi trovati piu' avanti nel messaggio (es. sotto la chiave
+        // "password") vanno nascosti anche dove comparivano prima, in chiaro
+        text = replaceKnownValues(text);
         Map<String, String> terms = new java.util.LinkedHashMap<>();
         for (String t : ov.orgTerms) for (String v : orgVariants(t)) terms.putIfAbsent(v, "ORG");
         for (String t : map.orgTerms()) for (String v : orgVariants(t)) terms.putIfAbsent(v, "ORG");

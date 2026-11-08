@@ -15,6 +15,32 @@
       ]
     },
     {
+      "id": "pii-username-path-prefisso-api",
+      "description": "Username nel path dopo un prefisso di versione (/api/v2/users/)",
+      "severity": "high",
+      "request": "GET /api/v2/users/mario.rossi/profile HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "must_hide": [
+        "mario.rossi"
+      ],
+      "must_keep": [
+        "/api/v2/users/",
+        "/profile"
+      ]
+    },
+    {
+      "id": "pii-username-path-prefisso-payload",
+      "description": "Username dopo /api/v2/users/ con un payload nella query: utente nascosto, payload leggibile",
+      "severity": "high",
+      "request": "GET /api/v2/users/mario.rossi/orders?q=%27%20OR%201%3D1-- HTTP/1.1\nHost: app.acme-corp.it\n\n",
+      "must_hide": [
+        "mario.rossi"
+      ],
+      "must_keep": [
+        "/api/v2/users/",
+        "q=%27%20OR%201%3D1--"
+      ]
+    },
+    {
       "id": "pii-tilde-path",
       "description": "Home web /~utente",
       "severity": "high",

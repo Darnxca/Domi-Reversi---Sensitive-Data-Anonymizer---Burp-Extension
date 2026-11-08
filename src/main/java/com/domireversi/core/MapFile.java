@@ -16,7 +16,7 @@ import java.util.regex.Pattern;
  * incarico dura settimane). Il file lo scrive solo l'utente, quando lo chiede:
  * contiene i dati reali, va custodito come il resto delle evidenze del test.
  *
- * L'import e' difensivo (come in rizzo-pii): un file con chiavi vuote o non a
+ * L'import e' difensivo: un file con chiavi vuote o non a
  * forma di segnaposto renderebbe la sostituzione quasi universale e
  * corromperebbe l'intero testo, quindi viene rifiutato per intero.
  */

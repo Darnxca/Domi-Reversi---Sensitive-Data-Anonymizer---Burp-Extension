@@ -1,6 +1,6 @@
 {
-  "category": "Idee da rizzo-pii",
-  "description": "Casi ripresi dai rilevatori e dai test di rizzo-pii (Rizzo AI Academy), adattati al traffico HTTP: checksum, formati di stampa, confini, normalizzazione, codifiche, tabelle.",
+  "category": "Formati, checksum e codifiche",
+  "description": "Casi adattati al traffico HTTP: checksum, formati di stampa, confini, normalizzazione, codifiche, tabelle.",
   "cases": [
     {
       "id": "rz-cf-omocodico",

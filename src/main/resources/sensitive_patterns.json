@@ -77,7 +77,7 @@
     {
       "name": "web_user_path",
       "prefix": "USERNAME",
-      "regex": "((?<![\\w.-])/(?:(?:users?|members?|accounts?|employees?|people|profiles?|utenti|utente|dipendenti|clienti)/|~))([A-Za-z][A-Za-z0-9._@-]{2,40})(?=[/?#\\s\"'&;,)]|$)",
+      "regex": "(/(?:(?:users?|members?|accounts?|employees?|people|profiles?|utenti|utente|dipendenti|clienti)/|~))([A-Za-z][A-Za-z0-9._@-]{2,40})(?=[/?#\\s\"'&;,)]|$)",
       "flags": "i",
       "keep_group": 1,
       "validate": "username",
@@ -102,7 +102,7 @@
     {
       "name": "sensitive_path_token",
       "prefix": "TOKEN",
-      "regex": "((?<![\\w.-])/(?:sessions?|tokens?|reset(?:-?password)?|password-?reset|invit(?:e|es|ation|ations)|verify|verification|activat(?:e|ion)|confirm(?:ation)?|magic-?links?|unsubscribe|share|shared|download-?links?|otp)/)([A-Za-z0-9_-]{16,256})(?=[/?#\\s\"'&;,)]|$)",
+      "regex": "(/(?:sessions?|tokens?|reset(?:-?password)?|password-?reset|invit(?:e|es|ation|ations)|verify|verification|activat(?:e|ion)|confirm(?:ation)?|magic-?links?|unsubscribe|share|shared|download-?links?|otp)/)([A-Za-z0-9_-]{16,256})(?=[/?#\\s\"'&;,)]|$)",
       "flags": "i",
       "keep_group": 1,
       "validate": "pathtoken",
@@ -470,7 +470,7 @@
       "regex": "\\b\\d(?:[ .\\-]?\\d){11,18}(?=[ .\\-](?:0?[1-9]|1[0-2])(?:[/\\-.]| )?\\d{2}(?:\\d{2})?\\b)",
       "flags": "",
       "validate": "card",
-      "_comment": "Carta con la scadenza attaccata ('4111 1111 1111 1111 12/26'): senza, il numero piu' la scadenza non passa il Luhn e la carta resterebbe in chiaro (idea da rizzo-pii)"
+      "_comment": "Carta con la scadenza attaccata ('4111 1111 1111 1111 12/26'): senza, il numero piu' la scadenza non passa il Luhn e la carta resterebbe in chiaro"
     },
     {
       "name": "credit_card",
@@ -493,7 +493,7 @@
       "regex": "\\b[A-HJ-NPR-TV-Z]{2}[ \\-]?\\d{3}[ \\-]?[A-HJ-NPR-TV-Z]{2}\\b",
       "flags": "",
       "validate": "plate",
-      "_comment": "Targa italiana nel testo (AB 123 CD, AB-123-CD, AB123CD): alfabeto senza I, O, Q, U come le targhe vere, maiuscole obbligatorie (idea da rizzo-pii)"
+      "_comment": "Targa italiana nel testo (AB 123 CD, AB-123-CD, AB123CD): alfabeto senza I, O, Q, U come le targhe vere, maiuscole obbligatorie"
     },
     {
       "name": "docid_it",
@@ -501,7 +501,7 @@
       "regex": "(\\b(?:R\\.?\\s?G\\.?(?:\\s?N\\.?\\s?R\\.?)?|Prot\\.?|protocollo|Rep\\.?|repertorio)(?:\\s{0,3}(?:n\\.?|num\\.?|nro\\.?|°))?\\s{0,3})(\\d{1,8}(?:[/\\-]\\d{2,4})?)\\b",
       "flags": "i",
       "keep_group": 1,
-      "_comment": "Numero di protocollo / ruolo generale / repertorio dopo la sua sigla: la sigla resta, il numero diventa DOCID_n (idea da rizzo-pii; utile sui portali della PA)"
+      "_comment": "Numero di protocollo / ruolo generale / repertorio dopo la sua sigla: la sigla resta, il numero diventa DOCID_n (utile sui portali della PA)"
     },
     {
       "name": "dob_context",
@@ -517,7 +517,7 @@
       "regex": "(?<![A-Za-z0-9.,/\\-])\\d{11}(?![A-Za-z0-9.,/\\-])",
       "flags": "",
       "validate": "piva",
-      "_comment": "Partita IVA senza contesto: 11 cifre con carattere di controllo valido (algoritmo ufficiale, come rizzo-pii); saltata sotto le chiavi identificative"
+      "_comment": "Partita IVA senza contesto: 11 cifre con carattere di controllo valido (algoritmo ufficiale); saltata sotto le chiavi identificative"
     },
     {
       "name": "codice_fiscale",

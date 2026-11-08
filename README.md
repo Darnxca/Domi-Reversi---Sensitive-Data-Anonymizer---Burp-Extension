@@ -78,8 +78,7 @@ the real message on one side, the anonymized one on the other, and a reversible 
   Thrift scanned in place; vCard, iCalendar, WebDAV, LDIF. Full list in
   [docs/PROTOCOLS.md](docs/PROTOCOLS.md).
 - **Exports and odd encodings**: CSV/TSV bodies by column header, UTF-16 bodies, IBANs printed in
-  groups, cards with expiry, plates, P.IVA with checksum (ideas adapted from
-  [rizzo-pii](https://github.com/Rizzo-AI-Academy/rizzo-pii)).
+  groups, cards with expiry, plates, P.IVA with checksum.
 
 **What it keeps readable (pentest-aware)**
 - **Your payloads.** SSTI, SQLi, NoSQLi, XSS, CRLF, traversal, XXE, JNDI, command injection…
